@@ -89,6 +89,7 @@ const spyCum = hasB('SPY') ? B.SPY.cum : null, qqqCum = hasB('QQQ') ? B.QQQ.cum 
 const ev = D.events.filter(e => Math.abs(e.amount) >= 100);
 const taxEv = ev.filter(e => e.kind === EV_TAX || e.kind === EV_REF);
 const wdEv = ev.filter(e => e.kind === EV_WD);
+const hasTax = taxEv.length > 0;   // most accounts never have a temporary withholding
 const taxOut = taxEv.filter(e => e.amount < 0).reduce((a, e) => a + e.amount, 0);
 const taxBack = taxEv.filter(e => e.amount > 0).reduce((a, e) => a + e.amount, 0);
 let maxGap = 0, gapDate = null;
@@ -113,7 +114,7 @@ if (D.positions.length) ins.push(`Currently long ${money(K.long_mv)} and short $
 
 /* ---------- page layout ---------- */
 const kpis = [
-  {hero: true, lab: 'Time-weighted return (adjusted)', val: pct(K.cum_adj), c: cls(K.cum_adj), note: `IBKR shows ${pct(K.cum_ibkr)} · excludes cash flows and temp. withholding`},
+  {hero: true, lab: 'Time-weighted return (adjusted)', val: pct(K.cum_adj), c: cls(K.cum_adj), note: hasTax ? `IBKR shows ${pct(K.cum_ibkr)} · excludes cash flows and temp. withholding` : `IBKR shows ${pct(K.cum_ibkr)} · excludes deposits and withdrawals`},
   {lab: 'SPY / QQQ, same period', val: `${pct(spyCum)}<span class="dim" style="font-size:16px"> / ${pct(qqqCum)}</span>`, note: spyCum != null ? `${pp(K.cum_adj - spyCum)} vs. SPY` : 'No benchmark data'},
   {lab: 'Total P&L', val: money(K.pnl, 0, true), c: cls(K.pnl), note: `NAV ${money(K.nav)} − net contributions ${money(K.contrib)}`},
   {lab: 'Money-weighted return (Modified Dietz)', val: pct(K.mdietz), c: cls(K.mdietz), note: `XIRR ${pct(K.irr, 0)} annualized${K.n_days < 252 ? ' (under a year; indicative only)' : ''}`},
@@ -144,9 +145,9 @@ document.getElementById('app').innerHTML = `
   <div class="chart"><canvas id="cMain"></canvas></div>
 </section>
 
-<section>
-  <h2>Why this differs from what IBKR shows</h2>
-  <div class="grid two">
+<section id="whySec">
+  <h2 id="whyTitle">Why this differs from what IBKR shows</h2>
+  <div class="grid two" id="whyGrid">
     <div class="callout" id="why"></div>
     <div class="card"><div class="sub" style="margin-bottom:6px">Around the withholding: IBKR vs. adjusted</div><div class="chart sm"><canvas id="cZoom"></canvas></div></div>
   </div>
@@ -232,10 +233,14 @@ document.getElementById('app').innerHTML = `
     const e = wdEv[wdEv.length - 1];
     const i = S.dates.indexOf(e.date);
     const navBefore = i > 0 ? S.nav[i - 1] : null;
-    w.push(`<p><b>${taxEv.length ? '2' : '1'}. A withdrawal does not affect the time-weighted return.</b> On ${md(e.date)} you withdrew ${money(-e.amount)}; IBKR's TWR for that day is ${pct(e.ibkr)} and the adjusted TWR is ${pct(e.adj)}, both normal. If a number you watch dropped after the withdrawal, it is likely a simple "NAV ÷ total deposits" return: before ${money(navBefore)} ÷ ${money(K.total_in)} − 1 = ${pct(navBefore / K.total_in - 1, 1)}, after ${money(e.nav)} ÷ ${money(K.total_in)} − 1 = ${pct(e.nav / K.total_in - 1, 1)}. The drop reflects money taken out, not an investment loss.</p>`);
+    w.push(`<p><b>${taxEv.length ? '2. ' : ''}A withdrawal does not affect the time-weighted return.</b> On ${md(e.date)} you withdrew ${money(-e.amount)}; IBKR's TWR for that day is ${pct(e.ibkr)} and the adjusted TWR is ${pct(e.adj)}, both normal. If a number you watch dropped after the withdrawal, it is likely a simple "NAV ÷ total deposits" return: before ${money(navBefore)} ÷ ${money(K.total_in)} − 1 = ${pct(navBefore / K.total_in - 1, 1)}, after ${money(e.nav)} ÷ ${money(K.total_in)} − 1 = ${pct(e.nav / K.total_in - 1, 1)}. The drop reflects money taken out, not an investment loss.</p>`);
   }
-  if (!w.length) w.push('<p>No temporary withholdings or withdrawals in this period, so both measures are essentially the same.</p>');
   document.getElementById('why').innerHTML = w.join('');
+  if (!hasTax) {
+    document.getElementById('whyGrid').style.gridTemplateColumns = '1fr';
+    document.getElementById('whyTitle').textContent = 'Withdrawals and your return';
+  }
+  if (!hasTax && !wdEv.length) { document.getElementById('whySec').style.display = 'none'; return; }
 
   document.getElementById('tEv').innerHTML = `<tr><th class="l">Date</th><th class="l">Event</th><th>Amount</th><th>IBKR daily return</th><th>Adjusted daily return</th><th>NAV</th></tr>` +
     ev.map(e => `<tr><td class="l">${e.date}</td><td class="l"><span class="tag ${evTag(e.kind)}">${e.kind}</span></td><td class="${cls(e.amount)}">${money(e.amount, 2, true)}</td><td class="${cls(e.ibkr)}">${pct(e.ibkr)}</td><td class="${cls(e.adj)}">${pct(e.adj)}</td><td>${money(e.nav)}</td></tr>`).join('');
@@ -249,7 +254,7 @@ document.getElementById('app').innerHTML = `
     return `background:${v >= 0 ? `rgba(19,154,74,${a})` : `rgba(217,45,45,${a})`}`;
   };
   const has = s => D.months.some(r => r[s] != null);
-  const cols = [['account', 'Account (adjusted)'], ['ibkr', 'IBKR as reported']].concat(has('SPY') ? [['SPY', 'SPY']] : []).concat(has('QQQ') ? [['QQQ', 'QQQ']] : []);
+  const cols = [['account', 'Account (adjusted)']].concat(hasTax ? [['ibkr', 'IBKR as reported']] : []).concat(has('SPY') ? [['SPY', 'SPY']] : []).concat(has('QQQ') ? [['QQQ', 'QQQ']] : []);
   let h = `<tr><th class="l">Month</th>${cols.map(c => `<th>${c[1]}</th>`).join('')}${has('SPY') ? '<th>Excess vs. SPY</th>' : ''}</tr>`;
   const prod = k => D.months.reduce((a, r) => a * (1 + (r[k] ?? 0)), 1) - 1;
   h += D.months.map(r => `<tr><td class="l">${r.m}</td>${cols.map(c => `<td style="${c[0] === 'account' ? heat(r[c[0]]) : ''}">${pct(r[c[0]])}</td>`).join('')}${has('SPY') ? `<td class="${cls(r.account - r.SPY)}">${r.SPY != null ? pp(r.account - r.SPY) : '—'}</td>` : ''}</tr>`).join('');
@@ -321,7 +326,7 @@ function drawMain(r) {
   const evCols = labels.map(d => evMap[d] ? evColor(evMap[d][0].kind) : 'transparent');
   const ds = [
     line('My account (adjusted)', adj, '#1f5eff', {borderWidth: 2.6, order: 1}),
-    line('IBKR as reported', rb(S.ibkr), '#a3abbd', {borderDash: [5, 4], borderWidth: 1.6, order: 3}),
+    line('IBKR as reported', rb(S.ibkr), '#a3abbd', {borderDash: [5, 4], borderWidth: 1.6, order: 3, hidden: !hasTax}),
   ];
   if (hasB('SPY')) ds.push(line('SPY', rb(S.SPY), '#f08c2e', {order: 2}));
   if (hasB('QQQ')) ds.push(line('QQQ', rb(S.QQQ), '#16a06a', {order: 2}));
@@ -379,7 +384,7 @@ document.querySelectorAll('#rng button').forEach(b => b.onclick = () => {
 /* drawdown */
 (function () {
   const ds = [line('My account', S.dd_adj, '#1f5eff', {fill: 'origin', backgroundColor: 'rgba(31,94,255,.10)', borderWidth: 1.8})];
-  ds.push(line('IBKR as reported', S.dd_ibkr, '#a3abbd', {borderDash: [5, 4], borderWidth: 1.3}));
+  ds.push(line('IBKR as reported', S.dd_ibkr, '#a3abbd', {borderDash: [5, 4], borderWidth: 1.3, hidden: !hasTax}));
   if (hasB('SPY')) ds.push(line('SPY', S.dd_SPY, '#f08c2e', {borderWidth: 1.4}));
   if (hasB('QQQ')) ds.push(line('QQQ', S.dd_QQQ, '#16a06a', {borderWidth: 1.4}));
   new Chart(document.getElementById('cDD'), {type: 'line', data: {labels: S.dates, datasets: ds},

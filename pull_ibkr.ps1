@@ -1,4 +1,4 @@
-﻿<#
+<#
   IBKR Flex Web Service pull script
 
   First run:  asks for your Query ID and Token. The token is encrypted with Windows DPAPI,
@@ -166,7 +166,7 @@ try {
     foreach ($sym in @('SPY', 'QQQ')) {
         $ok = $false
         foreach ($h in @('query1', 'query2')) {
-            $u = "https://${h}.finance.yahoo.com/v8/finance/chart/${sym}?range=5y&interval=1d&events=div%2Csplit&includeAdjustedClose=true"
+            $u = "https://${h}.finance.yahoo.com/v8/finance/chart/${sym}?range=max&interval=1d&events=div%2Csplit&includeAdjustedClose=true"
             try {
                 $resp = Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 60 `
                           -UserAgent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36'

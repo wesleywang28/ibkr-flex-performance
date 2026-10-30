@@ -1,12 +1,23 @@
-﻿<#
-  Registers a Windows scheduled task that pulls the previous trading day's IBKR data
-  every Tuesday-Saturday at 07:00. If the computer is off or asleep at that time,
-  the task runs as soon as possible afterwards.
+<#
+  Registers a Windows scheduled task that pulls your IBKR data once a day.
+  If the computer is off or asleep at that time, the task runs as soon as possible afterwards.
+
+  IBKR publishes the previous day's Flex data overnight US Eastern time, so pick a local time
+  after roughly 06:00 ET (e.g. 07:00 in the US, 14:00 in Europe, 19:00-20:00 in Asia).
 
   Parameters:
-    -Remove  delete the scheduled task
+    -At '07:00'  local time to run (default 07:00)
+    -Remove      delete the scheduled task
+
+  Examples:
+    setup_schedule.bat
+    setup_schedule.bat -At 19:30
+    setup_schedule.bat -Remove
 #>
-param([switch]$Remove)
+param(
+    [string]$At = '07:00',
+    [switch]$Remove
+)
 
 $ErrorActionPreference = 'Stop'
 $TaskName = 'IBKR Flex Daily Pull'
@@ -26,7 +37,7 @@ if (-not (Test-Path (Join-Path $Root 'config\flex_credentials.xml'))) {
 
 $arg = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Script`" -Scheduled"
 $action    = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arg -WorkingDirectory $Root
-$trigger   = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Tuesday, Wednesday, Thursday, Friday, Saturday -At '07:00'
+$trigger   = New-ScheduledTaskTrigger -Daily -At $At
 $settings  = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
                 -ExecutionTimeLimit (New-TimeSpan -Minutes 20)
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
@@ -34,5 +45,5 @@ $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" 
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings `
     -Principal $principal -Description 'Daily pull of the IBKR Flex report into a local folder' -Force | Out-Null
 
-Write-Host "Installed scheduled task: $TaskName (Tue-Sat 07:00)" -ForegroundColor Green
+Write-Host "Installed scheduled task: $TaskName (daily at $At)" -ForegroundColor Green
 Write-Host 'Run history: data\pull_log.txt'

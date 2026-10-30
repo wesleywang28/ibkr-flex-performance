@@ -10,7 +10,7 @@ Everything runs on your own computer through IBKR's official, read-only Flex Web
 
 IBKR's built-in return figures can be misleading in two common situations:
 
-- **Temporary tax withholding.** IBKR sometimes withholds tax up front (recorded as `transactionTax` in Flex) and refunds it days later. IBKR's TWR treats the withholding as an investment loss and the refund as a gain, so the curve plunges and then jumps back, and the drawdown looks far worse than it was. This project treats such withholdings as cash temporarily leaving and returning to the account, so they don't count as investment P&L.
+- **Temporary tax withholding.** IBKR sometimes withholds tax up front (recorded as `transactionTax` in Flex) and refunds it days later. IBKR's TWR treats the withholding as an investment loss and the refund as a gain, so the curve plunges and then jumps back, and the drawdown looks far worse than it was. This project matches each refund against the earlier withholdings and treats them as cash temporarily leaving and returning to the account, so they don't count as investment P&L. Transaction taxes that are never refunded (stamp duty, financial transaction taxes) stay in P&L as a real cost.
 - **Withdrawals.** A time-weighted return is not affected by withdrawals, but simple measures such as "NAV ÷ total deposits" drop sharply after you take money out. The dashboard shows both side by side and explains where the difference comes from.
 
 IBKR's charts also lack a benchmark comparison and any analysis of the trading itself. This project adds both.
@@ -56,8 +56,8 @@ The demo includes a temporary withholding to show the reconciliation. To see how
 1. **Create the Flex Query and token.** Follow [docs/FLEX_SETUP.md](docs/FLEX_SETUP.md) and note your Query ID and token.
 2. **First pull.** Double-click `run_pull.bat` and enter the Query ID and token when prompted. The token is encrypted with Windows DPAPI and stored in `config/`; only your Windows user on this computer can decrypt it. A successful run logs something like `Success: 20251029 ~ 20261028 | days=261, ...`.
 3. **Build the dashboard.** If Python is installed, `ibkr_dashboard.html` is rebuilt automatically after every pull. You can also double-click `build_dashboard.bat` at any time.
-4. **Daily updates.** Double-click `setup_schedule.bat` to register a scheduled task (Tuesday to Saturday at 07:00; if the computer is off, it runs at the next opportunity). Failures show a Windows notification. To remove the task: `setup_schedule.bat -Remove`.
-5. Optional: set `token_expiry` in `analysis/settings.json` to your token's expiry date, and adjust the risk-free rate or risk thresholds.
+4. **Daily updates.** Double-click `setup_schedule.bat` to register a daily scheduled task at 07:00 local time (if the computer is off, it runs at the next opportunity). IBKR publishes the previous day's data overnight US Eastern time, so outside the US pick a later time, e.g. `setup_schedule.bat -At 19:30` in Asia or `-At 14:00` in Europe. Failures show a Windows notification. To remove the task: `setup_schedule.bat -Remove`.
+5. Optional: set `token_expiry` in `analysis/settings.json` to your token's expiry date, and adjust the risk-free rate, the transaction-tax treatment or the risk thresholds.
 
 When the token expires or you generate a new one, double-click `reset_token.bat` and enter it again.
 
@@ -73,7 +73,7 @@ analysis/
   risk.py                           monthly trading style, risk flags, rolling metrics
   build_dashboard.py                render the HTML and print a text summary
   template.html                     dashboard template (Chart.js is downloaded to analysis/vendor/ on first run and inlined)
-  settings.json                     risk-free rate, token expiry, risk thresholds
+  settings.json                     risk-free rate, transaction-tax treatment, token expiry, risk thresholds
 demo/                               demo data generator
 docs/FLEX_SETUP.md                  IBKR Flex Query setup guide
 claude-skill/SKILL.md               optional skill template for using this with Claude
@@ -88,12 +88,15 @@ ibkr_dashboard.html, reports/       dashboard and monthly snapshots
 
 ## Methodology
 
-- **Adjusted TWR**: daily return = (ending NAV − starting NAV − external cash flow) ÷ (starting NAV + that day's inflow), with inflows at the start of the day and outflows at the end, chained across days. External cash flows are deposits, withdrawals, asset transfers and temporary tax withholdings (`transactionTax`).
+- **Adjusted TWR**: daily return = (ending NAV − starting NAV − external cash flow) ÷ (starting NAV + that day's inflow), with inflows at the start of the day and outflows at the end, chained across days. External cash flows are deposits, withdrawals, asset transfers and temporary tax withholdings.
+- **Transaction tax** (`transactionTax` in Flex), controlled by `"transaction_tax"` in `analysis/settings.json`: `"auto"` (default) matches each refund first-in-first-out against earlier withholdings and treats matched amounts as temporary cash flows, while anything not refunded stays in P&L as a cost; `"temporary"` treats every amount as a temporary cash flow; `"cost"` treats every amount as a cost.
 - **IBKR as reported**: the daily `twr` field from the Flex report, chained, shown for comparison. Without temporary withholdings the two should be essentially identical (they match exactly on the demo data).
+- **Starting capital**: if the account already had money before the first day in your data (an account older than the data you pulled, with no backfilled history), its NAV on that day counts as starting capital for total P&L and the money-weighted return.
 - **Money-weighted return**: Modified Dietz = total P&L ÷ time-weighted average invested capital. XIRR is the annualized internal rate of return and is inflated for periods shorter than a year.
 - **Benchmarks**: SPY and QQQ dividend-adjusted closes, rebased to the account's start date.
 - **Risk metrics**: computed only on days after the account exceeded $5,000; risk-free rate 4% by default. Rolling 63-day metrics appear once there are 252 trading days of data.
 - **P&L by symbol**: FIFO realized + current unrealized + net dividends (after withholding tax).
+- **Currencies**: everything is shown in the account's base currency; trades and positions in other currencies are converted with IBKR's `fxRateToBase`.
 
 ## Risk flag rules
 
@@ -109,6 +112,7 @@ All thresholds are in `analysis/settings.json` under `thresholds`:
 | Latest month's payoff ratio | < 1 |
 | Current drawdown | ≥5% medium, ≥10% high |
 | Executions the day after a loss of ≥3% | ≥1.5× normal |
+| Transaction tax not refunded | any amount (shown as a cost) |
 | Stale data | more than 3 business days old |
 | Token expiry | ≤30 days left |
 | Notable trading-style change | relative change ≥50%, or share change ≥20 percentage points |
@@ -128,7 +132,7 @@ If you use Claude (Cowork), replace the paths in `claude-skill/SKILL.md` with yo
 
 - The data pull script is Windows-only.
 - Benchmark prices come from Yahoo Finance's unofficial endpoint and are meant for personal use. If it changes or a download fails, the dashboard simply omits the benchmarks; account data is unaffected.
-- Mainly tested on individual accounts trading stocks, ETFs and some options. Multi-currency accounts, futures and bonds have not been tested thoroughly.
+- Mainly tested on individual accounts trading stocks, ETFs and some options. Multi-currency accounts are converted to the base currency but have had less real-world testing; futures and bonds have not been tested.
 - With less than a year of history, annualized figures such as annualized return and Sharpe are unstable and indicative only.
 
 ## Disclaimer

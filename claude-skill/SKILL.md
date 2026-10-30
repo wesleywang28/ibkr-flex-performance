@@ -32,5 +32,5 @@ Key files: `data/pull_log.txt` (pull log), `data/latest.xml`, `data/raw/`, `data
 
 - The main measure is the adjusted TWR: temporary tax withholdings (`transactionTax`) are treated as cash temporarily leaving and returning, not as investment P&L. IBKR's own figure is shown alongside for comparison.
 - Withdrawals don't affect the TWR. Simple "NAV ÷ total deposits" returns drop after a withdrawal; that is not an investment loss.
-- If a withholding has not been refunded (the "Temporary withholding not yet refunded" flag), point it out to the user.
+- If transaction tax has not been refunded (the "Transaction tax counted as a cost" flag), point it out: it may be a temporary withholding that will be refunded later (the return is corrected automatically when the refund appears) or a real cost such as stamp duty.
 - To make the risk flags more or less sensitive, edit `thresholds` in `analysis/settings.json` and run step 2 again.

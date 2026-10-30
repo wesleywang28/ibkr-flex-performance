@@ -4,6 +4,9 @@ Generate a completely fictitious demo dataset so the dashboard can be previewed 
   python demo/generate_demo.py
   python analysis/build_dashboard.py demo --demo
 
+  Options: --no-withholding / --no-withdrawal generate an account without those events,
+  to see how the dashboard looks for a typical account.
+
 Output:
   demo/data/raw/flex_demo.xml               simulated Activity Flex Query with "Breakout by Day"
   demo/data/benchmarks/SPY.json, QQQ.json   simulated benchmark prices in Yahoo Finance chart format
@@ -256,4 +259,13 @@ def main():
 
 
 if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser(description="Generate fictitious demo data")
+    ap.add_argument("--no-withholding", action="store_true", help="omit the temporary tax withholding (most accounts never have one)")
+    ap.add_argument("--no-withdrawal", action="store_true", help="omit the withdrawal")
+    a = ap.parse_args()
+    if a.no_withholding:
+        TEMP_TAX.clear()
+    if a.no_withdrawal:
+        WITHDRAWALS.clear()
     main()

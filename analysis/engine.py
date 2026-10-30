@@ -32,7 +32,13 @@ EXTERNAL_FLOW_FIELDS = [  # ChangeInNAV fields treated as external cash flows
     "depositsWithdrawals", "assetTransfers", "internalCashTransfers",
     "debitCardActivity", "billPay", "donations", "paxosTransfers",
 ]
-TEMP_WITHHOLD_FIELDS = ["transactionTax"]  # temporary withholdings (later refunded): cash flows in the adjusted TWR
+TEMP_WITHHOLD_FIELDS = ["transactionTax"]  # IBKR's "transaction tax" bucket (temporary withholdings and real transaction taxes)
+# How to treat transactionTax in the adjusted TWR:
+#   "auto"      (default) amounts that are later refunded are temporary cash flows; anything not refunded is a real cost
+#               (e.g. stamp duty or a financial transaction tax)
+#   "temporary" treat every transactionTax amount as a temporary cash flow
+#   "cost"      treat every transactionTax amount as a cost
+TAX_MODE = str(SETTINGS.get("transaction_tax", "auto")).lower()
 
 # Event labels shown in the dashboard
 EV_DEPOSIT, EV_WITHDRAWAL = "Deposit", "Withdrawal"
@@ -87,9 +93,12 @@ def load_statements(root_dir: str):
 # 2. Daily NAV and cash flows
 # ======================================================================
 def daily_frame(days: dict) -> pd.DataFrame:
-    rows = []
+    rows, skipped = [], 0
     for dt in sorted(days):
         st = days[dt]
+        if st.get("fromDate") and st.get("toDate") and st.get("fromDate") != st.get("toDate"):
+            skipped += 1        # a multi-day statement (query run without "Breakout by Day"); can't be used for daily returns
+            continue
         c = st.find("ChangeInNAV")
         if c is None:
             continue
@@ -103,9 +112,45 @@ def daily_frame(days: dict) -> pd.DataFrame:
             commissions=f(a.get("commissions")), dividends=f(a.get("dividends")),
             interest=f(a.get("interest")), withholding=f(a.get("withholdingTax")),
         ))
+    if skipped:
+        print(f"[warn] skipped {skipped} statement(s) covering more than one day; run the query with \"Breakout by Day\" = Yes")
+    if not rows:
+        raise FileNotFoundError("No daily statements found (is \"Breakout by Day\" enabled in the Flex Query?)")
     df = pd.DataFrame(rows).set_index("date").sort_index()
     df = df[(df["end"] != 0) | (df["start"] != 0) | (df["ext_flow"] != 0)]
     return df
+
+
+def classify_transaction_tax(tt: pd.Series, mode: str = TAX_MODE) -> pd.Series:
+    """Return the part of each day's transactionTax that counts as a temporary cash flow.
+
+    auto: a refund (positive amount) is matched first-in-first-out against earlier withholdings
+    (negative amounts); matched withholdings and the refund are cash flows, unmatched withholdings
+    stay in P&L as a cost. A refund with no earlier withholding in the data is also a cash flow.
+    """
+    if mode == "temporary":
+        return tt.copy()
+    flow = pd.Series(0.0, index=tt.index)
+    if mode == "cost":
+        return flow
+    pending = []
+    for dt, v in tt.items():
+        if v < 0:
+            pending.append([dt, -v])
+        elif v > 0:
+            flow[dt] += v
+            left = v
+            while left > 1e-9 and pending:
+                pdt, rem = pending[0]
+                m = min(left, rem)
+                flow[pdt] -= m
+                left -= m
+                rem -= m
+                if rem <= 1e-9:
+                    pending.pop(0)
+                else:
+                    pending[0][1] = rem
+    return flow
 
 
 def twr_series(df: pd.DataFrame, flow_col: str) -> pd.Series:
@@ -176,7 +221,9 @@ def analyze(root_dir: str) -> dict:
     files, days, trades, cash, account = load_statements(root_dir)
     df = daily_frame(days)
 
-    df["flow_adj"] = df["ext_flow"] + df["temp_tax"]
+    df["temp_flow"] = classify_transaction_tax(df["temp_tax"])   # temporary part of transactionTax
+    df["tax_cost"] = df["temp_tax"] - df["temp_flow"]              # part that stays in P&L as a cost
+    df["flow_adj"] = df["ext_flow"] + df["temp_flow"]
     df["r_adj"] = twr_series(df, "flow_adj")      # adjusted (main measure)
     df["r_raw"] = twr_series(df, "ext_flow")      # unadjusted (should be close to IBKR's)
 
@@ -189,24 +236,38 @@ def analyze(root_dir: str) -> dict:
     d["idx_adj"] = (1 + d["r_adj"]).cumprod()
     d["idx_raw"] = (1 + d["r_raw"]).cumprod()
     d["idx_ibkr"] = (1 + d["ibkr_twr"]).cumprod()
-    d["net_contrib"] = df["ext_flow"].cumsum().loc[base_date:]
-    d["pending_tax"] = df["temp_tax"].cumsum().loc[base_date:]
+    # Capital contributed. If the account already had money before the first statement in the data
+    # (account older than the data window), the NAV on the base date counts as the starting capital.
+    pre_existing = float(df["start"].iloc[0]) >= MIN_CAPITAL
+    if pre_existing:
+        start_value = float(d.loc[base_date, "end"])
+        win_flows = df.loc[df.index > base_date, "ext_flow"]
+        cf = pd.concat([pd.Series({base_date: start_value}), win_flows])
+    else:
+        start_value = 0.0
+        win_flows = df["ext_flow"]
+        cf = df["ext_flow"].copy()
+    cf = cf[cf != 0]
+    d["net_contrib"] = cf.cumsum().reindex(d.index.union(cf.index)).ffill().reindex(d.index).fillna(0.0)
+    d["pending_tax"] = df["temp_flow"].cumsum().loc[base_date:]
 
     end_date = d.index.max()
     nav_end = float(d["end"].iloc[-1])
-    total_in = float(df.loc[df["ext_flow"] > 0, "ext_flow"].sum())
-    total_out = float(-df.loc[df["ext_flow"] < 0, "ext_flow"].sum())
-    net_contrib = total_in - total_out
-    pending_tax = float(df["temp_tax"].sum())
+    total_in = float(win_flows[win_flows > 0].sum())
+    total_out = float(-win_flows[win_flows < 0].sum())
+    net_contrib = start_value + total_in - total_out
+    pending_tax = float(df["temp_flow"].sum())        # temporary withholding not yet refunded (net cash flow, <= 0)
+    tax_cost = float(df["tax_cost"].sum())            # transactionTax kept in P&L as a cost
     pnl = nav_end - net_contrib                       # actual P&L (unrefunded withholding shows up as a loss)
-    pnl_ex_tax = pnl - pending_tax                    # P&L if the withholding is refunded later
+    pnl_ex_tax = pnl - pending_tax                    # P&L if the pending withholding is refunded later
 
     # ---- money-weighted ----
-    flows = [(dt, -v) for dt, v in df["ext_flow"].items() if v != 0]
+    flows = [(dt, -v) for dt, v in cf.items()]
     flows.append((end_date, nav_end - pending_tax))
-    irr = xirr(flows)
-    T = (end_date - df.index[df["ext_flow"] != 0].min()).days or 1
-    w_cap = sum(v * (end_date - dt).days / T for dt, v in df["ext_flow"].items() if v != 0)
+    irr = xirr(flows) if cf.size else None
+    T = (end_date - cf.index.min()).days if cf.size else 0
+    T = T or 1
+    w_cap = sum(v * (end_date - dt).days / T for dt, v in cf.items())
     mdietz = pnl_ex_tax / w_cap if w_cap else None
 
     # ---- risk ----
@@ -275,8 +336,8 @@ def analyze(root_dir: str) -> dict:
         if row["ext_flow"]:
             events.append(dict(date=dt, kind=EV_DEPOSIT if row["ext_flow"] > 0 else EV_WITHDRAWAL, amount=row["ext_flow"],
                                ibkr=row["ibkr_twr"], adj=float(df.loc[dt, "r_adj"]), nav=row["end"]))
-        if row["temp_tax"]:
-            events.append(dict(date=dt, kind=EV_WITHHOLD if row["temp_tax"] < 0 else EV_REFUND, amount=row["temp_tax"],
+        if row["temp_flow"]:      # transactionTax kept as a cost is not an event
+            events.append(dict(date=dt, kind=EV_WITHHOLD if row["temp_flow"] < 0 else EV_REFUND, amount=row["temp_flow"],
                                ibkr=row["ibkr_twr"], adj=float(df.loc[dt, "r_adj"]), nav=row["end"]))
 
     # ---- positions and daily exposure ----
@@ -284,10 +345,12 @@ def analyze(root_dir: str) -> dict:
     positions = []
     for p in last.iter("OpenPosition"):
         mult = f(p.get("multiplier")) or 1
+        fx = f(p.get("fxRateToBase")) or 1.0          # position values are in the instrument's currency
         positions.append(dict(
             symbol=p.get("symbol"), desc=p.get("description"), cat=p.get("assetCategory"), sub=p.get("subCategory"),
-            qty=f(p.get("position")), mark=f(p.get("markPrice")), value=f(p.get("positionValue")),
-            cost=f(p.get("costBasisMoney")), upnl=f(p.get("fifoPnlUnrealized")),
+            currency=p.get("currency") or "", fx=fx,
+            qty=f(p.get("position")), mark=f(p.get("markPrice")), value=f(p.get("positionValue")) * fx,
+            cost=f(p.get("costBasisMoney")) * fx, upnl=f(p.get("fifoPnlUnrealized")) * fx,
             avg=f(p.get("costBasisMoney")) / (f(p.get("position")) * mult) if f(p.get("position")) else 0,
         ))
     positions.sort(key=lambda x: -abs(x["value"]))
@@ -301,11 +364,17 @@ def analyze(root_dir: str) -> dict:
         st = days[dt]
         L = S = 0.0
         per = defaultdict(float)
-        for m in st.iter("MTMPerformanceSummaryUnderlying"):
-            if not m.get("symbol") or m.get("assetCategory") in (None, "", "CASH"):
-                continue
-            v = f(m.get("closeQuantity")) * f(m.get("closePrice")) * (f(m.get("multiplier")) or 1)
-            per[m.get("underlyingSymbol") or m.get("symbol").split()[0]] += v
+        if st.find("OpenPositions") is not None:      # preferred: position values converted to base currency
+            items = [(p.get("underlyingSymbol") or (p.get("symbol") or "").split()[0],
+                      f(p.get("positionValue")) * (f(p.get("fxRateToBase")) or 1.0))
+                     for p in st.iter("OpenPosition") if p.get("assetCategory") not in (None, "", "CASH")]
+        else:                                          # fallback: closing quantity x price from the MTM summary
+            items = [(m.get("underlyingSymbol") or m.get("symbol").split()[0],
+                      f(m.get("closeQuantity")) * f(m.get("closePrice")) * (f(m.get("multiplier")) or 1))
+                     for m in st.iter("MTMPerformanceSummaryUnderlying")
+                     if m.get("symbol") and m.get("assetCategory") not in (None, "", "CASH")]
+        for sym_u, v in items:
+            per[sym_u] += v
             if v > 0:
                 L += v
             else:
@@ -331,12 +400,15 @@ def analyze(root_dir: str) -> dict:
             sym_pnl[u]["mtm"] += f(m.get("total"))
             if not sym_pnl[u]["desc"] and m.get("assetCategory") == "STK":
                 sym_pnl[u]["desc"] = m.get("description") or ""
+    base_ccy = account.get("currency", "USD")
     for t in trades:
         u = t.get("underlyingSymbol") or (t.get("symbol") or "").split()[0]
-        sym_pnl[u]["realized"] += f(t.get("fifoPnlRealized"))
-        sym_pnl[u]["comm"] += f(t.get("ibCommission"))
+        fx = f(t.get("fxRateToBase")) or 1.0
+        cfx = 1.0 if (t.get("ibCommissionCurrency") or "") == base_ccy else fx
+        sym_pnl[u]["realized"] += f(t.get("fifoPnlRealized")) * fx
+        sym_pnl[u]["comm"] += f(t.get("ibCommission")) * cfx
         sym_pnl[u]["n_exec"] += 1
-        sym_pnl[u]["turnover"] += abs(f(t.get("tradeMoney")) * (f(t.get("fxRateToBase")) or 1))
+        sym_pnl[u]["turnover"] += abs(f(t.get("tradeMoney")) * fx)
     for p in positions:
         u = p["symbol"].split()[0]
         sym_pnl[u]["unrealized"] += p["upnl"]
@@ -360,7 +432,13 @@ def analyze(root_dir: str) -> dict:
     hold_days = []
     if not tdf.empty:
         for col in ["quantity", "tradePrice", "fifoPnlRealized", "ibCommission", "tradeMoney", "multiplier", "fxRateToBase"]:
-            tdf[col] = tdf[col].map(f)
+            tdf[col] = tdf[col].map(f) if col in tdf else 0.0
+        if "ibCommissionCurrency" not in tdf:
+            tdf["ibCommissionCurrency"] = ""
+        tdf["fx"] = tdf["fxRateToBase"].replace(0, 1.0)
+        tdf["pnl_base"] = tdf["fifoPnlRealized"] * tdf["fx"]
+        tdf["comm_base"] = tdf["ibCommission"] * np.where(tdf["ibCommissionCurrency"].fillna("") == base_ccy, 1.0, tdf["fx"])
+        tdf["money_base"] = tdf["tradeMoney"].abs() * tdf["fx"]
         tdf["dt"] = tdf["dateTime"].map(lambda s: datetime.strptime(s[:15], "%Y%m%d;%H%M%S") if s and ";" in s else datetime.strptime(s[:8], "%Y%m%d"))
         tdf = tdf.sort_values("dt")
         tdf["u"] = tdf.apply(lambda x: x.get("underlyingSymbol") or x["symbol"].split()[0], axis=1)
@@ -368,7 +446,7 @@ def analyze(root_dir: str) -> dict:
         # Closing trades: executions in the same symbol, day and direction count as one closing decision
         c = tdf[tdf["openCloseIndicator"].fillna("").str.contains("C")]
         if not c.empty:
-            g = c.groupby(["u", "tradeDate", "buySell"]).agg(pnl=("fifoPnlRealized", "sum"), qty=("quantity", "sum")).reset_index()
+            g = c.groupby(["u", "tradeDate", "buySell"]).agg(pnl=("pnl_base", "sum"), qty=("quantity", "sum")).reset_index()
             g["side"] = np.where(g["buySell"] == "SELL", LONG, SHORT)
             closes = g.to_dict("records")
             wins = g[g["pnl"] > 0]["pnl"]
@@ -390,7 +468,7 @@ def analyze(root_dir: str) -> dict:
             while q != 0 and lots[key] and np.sign(lots[key][0][0]) != np.sign(q):
                 lq, ld = lots[key][0]
                 m = min(abs(q), abs(lq))
-                hold_days.append(((t["dt"] - ld).total_seconds() / 86400, m * abs(t["tradePrice"]) * (t["multiplier"] or 1), t["u"], t["dt"]))
+                hold_days.append(((t["dt"] - ld).total_seconds() / 86400, m * abs(t["tradePrice"]) * (t["multiplier"] or 1) * t["fx"], t["u"], t["dt"]))
                 lq = lq + m * np.sign(q)
                 q = q - m * np.sign(q)
                 if abs(lq) < 1e-9:
@@ -401,8 +479,8 @@ def analyze(root_dir: str) -> dict:
                 lots[key].append((q, t["dt"]))
         open_lots = {k: min(ld for _, ld in v) for k, v in lots.items() if v}
         trade_stats["n_exec"] = int(len(tdf))
-        trade_stats["turnover"] = float((tdf["tradeMoney"].abs() * tdf["fxRateToBase"].replace(0, 1)).sum())
-        trade_stats["commissions"] = float(tdf["ibCommission"].sum())
+        trade_stats["turnover"] = float(tdf["money_base"].sum())
+        trade_stats["commissions"] = float(tdf["comm_base"].sum())
         trade_stats["n_symbols"] = int(tdf["u"].nunique())
         if hold_days:
             hd = np.array([h[0] for h in hold_days]); wt = np.array([h[1] for h in hold_days])
@@ -410,7 +488,7 @@ def analyze(root_dir: str) -> dict:
             trade_stats["median_hold_days"] = float(np.median(hd))
             trade_stats["intraday_share"] = float(wt[hd < 1].sum() / wt.sum())
         tdf["month"] = tdf["dt"].map(lambda x: x.strftime("%Y-%m"))
-        trade_stats["by_month"] = tdf.groupby("month").agg(n=("symbol", "size"), money=("tradeMoney", lambda s: float(s.abs().sum()))).reset_index().to_dict("records")
+        trade_stats["by_month"] = tdf.groupby("month").agg(n=("symbol", "size"), money=("money_base", "sum")).reset_index().to_dict("records")
 
     avg_nav = float(d.loc[d["end"] > MIN_CAPITAL, "end"].mean())
     trade_stats["turnover_x"] = trade_stats.get("turnover", 0) / avg_nav if avg_nav else None
@@ -430,6 +508,7 @@ def analyze(root_dir: str) -> dict:
         elif t in ("Other Fees", "Commission Adjustments", "Advisor Fees"):
             fees["Other fees"] += amt
     fees["Commissions"] = trade_stats.get("commissions", 0.0)
+    fees["Transaction tax (not refunded)"] = tax_cost
     fees["Temp. withholding not yet refunded"] = pending_tax
 
     cash_rows = sorted(cash, key=lambda c: c.get("dateTime") or "")
@@ -437,6 +516,7 @@ def analyze(root_dir: str) -> dict:
     return dict(
         files=files, account=account, df=df, d=d, base_date=base_date, end_date=end_date,
         nav_end=nav_end, total_in=total_in, total_out=total_out, net_contrib=net_contrib,
+        start_value=start_value, pre_existing=pre_existing, tax_cost=tax_cost, tax_mode=TAX_MODE, currency=account.get("currency", "USD"),
         pending_tax=pending_tax, pnl=pnl, pnl_ex_tax=pnl_ex_tax, irr=irr, mdietz=mdietz,
         cum_adj=cum_adj, cum_raw=float(d["idx_raw"].iloc[-1] - 1), cum_ibkr=float(d["idx_ibkr"].iloc[-1] - 1),
         ann_ret=ann_ret, n_days=n_days, vol=vol, sharpe=sharpe, sortino=sortino,

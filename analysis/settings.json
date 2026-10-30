@@ -1,5 +1,6 @@
 {
   "risk_free": 0.04,
+  "transaction_tax": "auto",
   "token_expiry": "",
   "rolling_window": 63,
   "rolling_min_days": 252,

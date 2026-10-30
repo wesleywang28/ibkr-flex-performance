@@ -18,7 +18,7 @@ IBKR's charts also lack a benchmark comparison and any analysis of the trading i
 ## Features
 
 - **Return chart**: adjusted TWR, IBKR as reported, SPY and QQQ on one chart, with All / 3M / 1M / YTD views and markers for deposits, withdrawals and withholdings
-- **Reconciliation**: finds temporary withholdings and withdrawals automatically and compares IBKR's daily return with the adjusted one, day by day
+- **Reconciliation**: finds temporary withholdings and withdrawals automatically and compares IBKR's daily return with the adjusted one, day by day. If your account never had a temporary withholding, the IBKR comparison lines and the withholding explanation are hidden automatically, since the two measures are then essentially the same
 - **Money-weighted return**: Modified Dietz and XIRR, plus "what if the same deposits and withdrawals had gone into SPY"
 - **Risk metrics**: max drawdown, annualized volatility, Sharpe, Sortino, beta and correlation to SPY, and tail risk estimated from the account's own daily returns
 - **Positions**: open positions, long/short value, and daily long/short exposure with gross leverage
@@ -40,6 +40,8 @@ python analysis/build_dashboard.py demo --demo
 ```
 
 Then open `demo/ibkr_dashboard.html`. On Windows you can also double-click `demo/run_demo.bat`. The demo account is entirely fictitious and randomly generated.
+
+The demo includes a temporary withholding to show the reconciliation. To see how the dashboard looks for a typical account without one, run `python demo/generate_demo.py --no-withholding` (add `--no-withdrawal` to drop the withdrawal too) before building.
 
 ## Using your own account
 

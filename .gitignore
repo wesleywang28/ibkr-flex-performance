@@ -1,0 +1,25 @@
+# ===== Personal account data: never commit =====
+config/
+data/
+reports/
+ibkr_dashboard.html
+*.xml
+
+# ===== Generated demo output (re-create with demo/generate_demo.py) =====
+demo/data/
+demo/reports/
+demo/*.html
+
+# ===== Chart.js is downloaded on first run =====
+analysis/vendor/
+
+# ===== Python =====
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# ===== OS files =====
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IBKR Performance Dashboard</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--ink:#1b2232;--muted:#6b7385;--line:#e5e7ec;--acc:#1f5eff;--ibkr:#a3abbd;--spy:#f08c2e;--qqq:#16a06a;--pos:#139a4a;--neg:#d92d2d;--tax:#7c4dff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;font-size:14px;line-height:1.55}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 60px}
+header{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px;margin-bottom:18px}
+h1{font-size:23px;margin:0;letter-spacing:.2px}
+.sub{color:var(--muted);font-size:12.5px}
+.grid{display:grid;gap:14px}
+.k4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:1000px){.k4{grid-template-columns:repeat(2,1fr)}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.kpi .lab{color:var(--muted);font-size:12.5px}
+.kpi .val{font-size:24px;font-weight:680;margin-top:2px;font-variant-numeric:tabular-nums;letter-spacing:-.3px}
+.kpi .note{font-size:12px;color:var(--muted);margin-top:3px}
+.kpi.hero{border-color:#cfdcff;background:linear-gradient(180deg,#f7f9ff,#fff)}
+section{margin-top:26px}
+h2{font-size:16.5px;margin:0 0 10px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+h2 .hint{font-weight:400;color:var(--muted);font-size:12.5px}
+.pos{color:var(--pos)}.neg{color:var(--neg)}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.btns{display:flex;gap:6px}
+.btns button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:4px 11px;font-size:12.5px;cursor:pointer;color:var(--ink)}
+.btns button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.chart{position:relative;height:360px}
+.chart.md{height:290px}.chart.sm{height:240px}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:13px}
+th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{color:var(--muted);font-weight:500;font-size:12px;background:#fafbfc;position:sticky;top:0}
+td.l,th.l{text-align:left}
+tr:last-child td{border-bottom:none}
+.two{grid-template-columns:1.25fr 1fr}
+.half{grid-template-columns:1fr 1fr}
+@media(max-width:900px){.two,.half{grid-template-columns:1fr}}
+.callout{background:#f5f2ff;border:1px solid #e4dcff;border-radius:10px;padding:13px 15px;font-size:13.3px}
+.callout b{font-weight:650}
+.callout p{margin:0 0 8px}.callout p:last-child{margin:0}
+.chips{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.chip{background:#f6f7f9;border:1px solid var(--line);border-radius:10px;padding:8px 12px;min-width:130px}
+.chip .lab{font-size:12px;color:var(--muted)}.chip .val{font-size:16px;font-weight:650;font-variant-numeric:tabular-nums}
+.scroll{overflow:auto;max-height:520px}
+.dim{color:var(--muted)}
+.tag{display:inline-block;padding:0 7px;border-radius:6px;font-size:11.5px;line-height:19px}
+.t-out{background:#fde8e8;color:#b42318}.t-in{background:#e5f6ec;color:#11713a}.t-tax{background:#efe9ff;color:#5b34d6}
+ul.ins{margin:0;padding-left:18px}ul.ins li{margin:4px 0}
+.list td{padding:5px 8px}
+.flags{display:grid;grid-template-columns:1fr 1fr;gap:8px}@media(max-width:900px){.flags{grid-template-columns:1fr}}
+.flag{border:1px solid var(--line);border-left:4px solid #9aa3b5;border-radius:8px;padding:9px 12px;background:#fff}
+.flag.high{border-left-color:#d92d2d;background:#fff7f7}.flag.mid{border-left-color:#e8a317;background:#fffaf0}.flag.info{border-left-color:#7f8aa3}
+.flag .t{font-weight:620;font-size:13.5px}.flag .x{color:var(--muted);font-size:12.6px;margin-top:2px}
+.lv{display:inline-block;font-size:11px;padding:0 6px;border-radius:5px;margin-right:6px;line-height:18px;vertical-align:1px}
+.lv.high{background:#fde2e2;color:#b42318}.lv.mid{background:#fdf0d5;color:#9a6100}.lv.info{background:#eef0f4;color:#4b5568}
+tr.big td{background:#fff8e6}
+.cnt{font-size:12px;font-weight:500;color:var(--muted)}
+footer{margin-top:34px;color:var(--muted);font-size:12.3px}
+details{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 16px}
+details summary{cursor:pointer;color:var(--ink);font-weight:600}
+details li{margin:4px 0}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<script>/*__CHARTJS__*/</script>
+<script>
+const D = /*__DATA__*/;
+const S = D.series, K = D.kpi, B = D.bench, M = D.meta;
+const hasB = s => Array.isArray(S[s]);
+const EV_DEP = 'Deposit', EV_WD = 'Withdrawal', EV_TAX = 'Temp. withholding', EV_REF = 'Withholding refund';
+
+/* ---------- formatting ---------- */
+const money = (v, dp = 0, sign = false) => v == null ? '—' :
+  (v < 0 ? '-$' : (sign && v > 0 ? '+$' : '$')) + Math.abs(v).toLocaleString('en-US', {minimumFractionDigits: dp, maximumFractionDigits: dp});
+const pct = (v, dp = 2, sign = true) => v == null ? '—' : ((sign && v > 0) ? '+' : '') + (v * 100).toFixed(dp) + '%';
+const num = (v, dp = 2) => v == null ? '—' : v.toFixed(dp);
+const cls = v => v == null ? '' : (v >= 0 ? 'pos' : 'neg');
+const md = s => s ? s.slice(5).replace('-', '/') : '—';
+const pp = v => (v * 100).toFixed(1) + ' pp';
+const evTag = k => k === EV_WD ? 't-out' : (k === EV_DEP ? 't-in' : 't-tax');
+
+/* ---------- precomputed values ---------- */
+const N = S.dates.length;
+const spyCum = hasB('SPY') ? B.SPY.cum : null, qqqCum = hasB('QQQ') ? B.QQQ.cum : null;
+const ev = D.events.filter(e => Math.abs(e.amount) >= 100);
+const taxEv = ev.filter(e => e.kind === EV_TAX || e.kind === EV_REF);
+const wdEv = ev.filter(e => e.kind === EV_WD);
+const taxOut = taxEv.filter(e => e.amount < 0).reduce((a, e) => a + e.amount, 0);
+const taxBack = taxEv.filter(e => e.amount > 0).reduce((a, e) => a + e.amount, 0);
+let maxGap = 0, gapDate = null;
+for (let i = 0; i < N; i++) { const g = (S.adj[i] ?? 0) - (S.ibkr[i] ?? 0); if (g > maxGap) { maxGap = g; gapDate = S.dates[i]; } }
+const minIbkrDD = Math.min(...S.dd_ibkr.filter(v => v != null));
+const syms = D.syms.slice();
+const totalSymPnl = syms.reduce((a, s) => a + s.total, 0);
+const top5 = syms.filter(s => s.total > 0).slice(0, 5);
+const top5Share = top5.reduce((a, s) => a + s.total, 0) / (totalSymPnl || 1);
+const T = D.trade;
+const grossExpo = K.long_mv - K.short_mv;
+
+/* ---------- key observations ---------- */
+const ins = [];
+if (spyCum != null) ins.push(`Over the same period (${md(M.start)} to ${md(M.end)}) the time-weighted return was <b class="${cls(K.cum_adj)}">${pct(K.cum_adj)}</b> vs. SPY ${pct(spyCum)}${qqqCum != null ? ' and QQQ ' + pct(qqqCum) : ''}, an excess of about <b>${pp(K.cum_adj - spyCum)}</b>.`);
+if (hasB('SPY')) ins.push(`Had every deposit and withdrawal gone into SPY instead, the account would be worth about ${money(B.SPY.sim_end)} (P&L ${money(B.SPY.sim_pnl, 0, true)}); the actual account is ${money(K.nav)} (P&L ${money(K.pnl, 0, true)}).`);
+if (hasB('SPY') && B.SPY.beta != null) ins.push(`Beta to SPY is ${num(B.SPY.beta)} with a correlation of ${num(B.SPY.corr)}${Math.abs(B.SPY.corr) < 0.5 ? ': the account moves largely independently of the market, so returns come mostly from stock selection and trading' : ''}.`);
+if (top5.length) ins.push(`Concentration of gains: the top ${top5.length} symbols (${top5.map(s => s.symbol).join(', ')}) account for ${(top5Share * 100).toFixed(0)}% of total P&L.`);
+if (T.win_rate != null) ins.push(`Win rate on closes is ${pct(T.win_rate, 1, false)}; the average loss (${money(T.avg_loss)}) is ${Math.abs(T.avg_loss) > T.avg_win ? 'larger' : 'smaller'} than the average win (${money(T.avg_win)}), a payoff ratio of ${num(T.avg_win / Math.abs(T.avg_loss || 1))}.${syms.length && syms[syms.length - 1].total < 0 ? ' The biggest loser is ' + syms[syms.length - 1].symbol + ' (' + money(syms[syms.length - 1].total) + ').' : ''}`);
+if (T.avg_hold_days != null) ins.push(`Trading pace: value-weighted average holding period ${num(T.avg_hold_days, 1)} days (median ${num(T.median_hold_days, 1)}), ${pct(T.intraday_share, 0, false)} of closed value was round-tripped intraday, and total traded value is ${num(T.turnover_x, 1)}× average NAV.`);
+if (D.positions.length) ins.push(`Currently long ${money(K.long_mv)} and short ${money(K.short_mv)}: gross exposure ${(grossExpo / K.nav).toFixed(2)}× NAV, net exposure ${pct((K.long_mv + K.short_mv) / K.nav, 0)}.`);
+
+/* ---------- page layout ---------- */
+const kpis = [
+  {hero: true, lab: 'Time-weighted return (adjusted)', val: pct(K.cum_adj), c: cls(K.cum_adj), note: `IBKR shows ${pct(K.cum_ibkr)} · excludes cash flows and temp. withholding`},
+  {lab: 'SPY / QQQ, same period', val: `${pct(spyCum)}<span class="dim" style="font-size:16px"> / ${pct(qqqCum)}</span>`, note: spyCum != null ? `${pp(K.cum_adj - spyCum)} vs. SPY` : 'No benchmark data'},
+  {lab: 'Total P&L', val: money(K.pnl, 0, true), c: cls(K.pnl), note: `NAV ${money(K.nav)} − net contributions ${money(K.contrib)}`},
+  {lab: 'Money-weighted return (Modified Dietz)', val: pct(K.mdietz), c: cls(K.mdietz), note: `XIRR ${pct(K.irr, 0)} annualized${K.n_days < 252 ? ' (under a year; indicative only)' : ''}`},
+  {lab: 'Net asset value', val: money(K.nav), note: `Deposits ${money(K.total_in)} · withdrawals ${money(K.total_out)}`},
+  {lab: 'Max drawdown', val: pct(K.mdd), c: 'neg', note: `${md(K.mdd_peak)} → ${md(K.mdd_trough)}, ${K.mdd_rec ? 'recovered ' + md(K.mdd_rec) : 'not yet recovered'}`},
+  {lab: 'Annualized volatility / Sharpe', val: `${pct(K.vol, 1, false)}<span class="dim" style="font-size:16px"> / ${num(K.sharpe)}</span>`, note: `SPY volatility ${hasB('SPY') ? pct(B.SPY.vol, 1, false) : '—'} · Sortino ${num(K.sortino)}`},
+  {lab: 'Best / worst day', val: `<span class="pos">${pct(K.best[1], 1)}</span><span class="dim" style="font-size:16px"> / </span><span class="neg">${pct(K.worst[1], 1)}</span>`, note: `${md(K.best[0])} / ${md(K.worst[0])} · up days ${pct(K.pos_days, 0, false)}`},
+];
+
+document.getElementById('app').innerHTML = `
+<header>
+  <div><h1>IBKR Performance Dashboard${M.demo ? ' <span class="tag t-tax" style="font-size:13px;vertical-align:4px">demo data</span>' : ''}</h1>
+  <div class="sub">Account ${M.account} · ${M.currency} · ${M.start} to ${M.end} (${K.n_days} trading days)</div>
+  <div class="sub" style="margin-top:3px">Latest day ${M.end}: NAV ${money(K.nav)}, <span class="${cls(S.r_adj[N - 1])}">${pct(S.r_adj[N - 1])}</span>${hasB('SPY') ? ` (SPY ${pct((1 + S.SPY[N - 1]) / (1 + S.SPY[N - 2]) - 1)})` : ''}</div></div>
+  <div class="sub">Generated ${M.generated}</div>
+</header>
+
+<div class="grid k4">${kpis.map(k => `<div class="card kpi ${k.hero ? 'hero' : ''}"><div class="lab">${k.lab}</div><div class="val ${k.c || ''}">${k.val}</div><div class="note">${k.note}</div></div>`).join('')}</div>
+
+<section class="card" id="riskCard">
+  <h2>Risk flags <span class="hint">Rule-based and descriptive only, not investment advice. Thresholds are in analysis/settings.json.</span></h2>
+  <div class="flags" id="flags"></div>
+</section>
+
+<section class="card">
+  <div class="row"><h2>Cumulative return <span class="hint">Time-weighted, rebased to zero · click the legend to toggle lines · ▲ marks cash flows and withholdings</span></h2>
+  <div class="btns" id="rng"><button data-r="all" class="on">All</button><button data-r="3m">3M</button><button data-r="1m">1M</button><button data-r="ytd">YTD</button></div></div>
+  <div class="chart"><canvas id="cMain"></canvas></div>
+</section>
+
+<section>
+  <h2>Why this differs from what IBKR shows</h2>
+  <div class="grid two">
+    <div class="callout" id="why"></div>
+    <div class="card"><div class="sub" style="margin-bottom:6px">Around the withholding: IBKR vs. adjusted</div><div class="chart sm"><canvas id="cZoom"></canvas></div></div>
+  </div>
+  <div class="card" style="margin-top:14px"><table id="tEv"></table></div>
+</section>
+
+<section class="card" id="styleCard">
+  <h2>Trading-style changes <span class="hint" id="styleHint"></span></h2>
+  <div class="sub" style="margin-bottom:4px">Latest month vs. average of earlier months (highlighted = notable change)</div>
+  <div style="max-width:760px"><table id="tChg"></table></div>
+  <div class="sub" style="margin:16px 0 4px">By month</div>
+  <div class="scroll"><table id="tStyle"></table></div>
+</section>
+
+<section class="card" id="rollCard" style="display:none"><h2>Rolling metrics <span class="hint" id="rollHint"></span></h2><div class="chart md"><canvas id="cRoll"></canvas></div></section>
+
+<section class="card"><h2>Key observations <span class="hint">Generated from the data</span></h2><ul class="ins">${ins.map(x => `<li>${x}</li>`).join('')}</ul></section>
+
+<section class="grid half">
+  <div class="card"><h2>NAV vs. net contributions <span class="hint">Dashed: same cash flows invested in SPY</span></h2><div class="chart md"><canvas id="cNav"></canvas></div></div>
+  <div class="card"><h2>Drawdown <span class="hint">Decline from the running peak</span></h2><div class="chart md"><canvas id="cDD"></canvas></div></div>
+</section>
+
+<section class="card"><h2>Monthly returns <span class="hint">Time-weighted</span></h2><div class="scroll"><table id="tMon"></table></div></section>
+
+<section class="card">
+  <h2>Open positions <span class="hint">As of ${M.end}</span></h2>
+  <div class="chips">
+    <div class="chip"><div class="lab">Long value</div><div class="val">${money(K.long_mv)}</div></div>
+    <div class="chip"><div class="lab">Short value</div><div class="val">${money(K.short_mv)}</div></div>
+    <div class="chip"><div class="lab">Cash</div><div class="val">${money(K.cash)}</div></div>
+    <div class="chip"><div class="lab">Gross exposure / NAV</div><div class="val">${(grossExpo / K.nav).toFixed(2)}×</div></div>
+    <div class="chip"><div class="lab">Net exposure / NAV</div><div class="val">${pct((K.long_mv + K.short_mv) / K.nav, 1)}</div></div>
+  </div>
+  <div class="scroll"><table id="tPos"></table></div>
+  <div class="sub" style="margin:14px 0 6px">Daily long / short exposure and gross leverage</div>
+  <div class="chart sm"><canvas id="cExpo"></canvas></div>
+</section>
+
+<section class="grid half">
+  <div class="card"><h2>P&amp;L by symbol <span class="hint">Realized + unrealized + net dividends</span></h2><div class="chart" id="symWrap"><canvas id="cSym"></canvas></div></div>
+  <div class="card"><h2>Symbol details</h2><div class="scroll"><table id="tSym"></table></div></div>
+</section>
+
+<section class="card">
+  <h2>Trade analysis <span class="hint">Closing executions in the same symbol, day and direction count as one close</span></h2>
+  <div class="chips" id="tchips"></div>
+  <div class="grid half">
+    <div><div class="sub" style="margin-bottom:4px">Largest winning closes</div><table class="list" id="tWin"></table></div>
+    <div><div class="sub" style="margin-bottom:4px">Largest losing closes</div><table class="list" id="tLoss"></table></div>
+  </div>
+  <div class="sub" style="margin:16px 0 6px">Executions and traded value by month</div>
+  <div class="chart sm"><canvas id="cAct"></canvas></div>
+</section>
+
+<section class="card"><h2>Fees and income</h2><table id="tFee"></table></section>
+
+<section>
+<details><summary>Methodology</summary>
+<ul>
+  <li><b>Adjusted TWR</b>: daily return = (ending NAV − starting NAV − external cash flow) ÷ (starting NAV + that day's inflow). External cash flows are deposits, withdrawals, asset transfers and <b>temporary tax withholdings (transactionTax)</b>: a withholding is treated as cash temporarily leaving the account and the refund as cash coming back, so neither counts as investment P&amp;L. Daily returns are chained.</li>
+  <li><b>IBKR as reported</b>: IBKR's own daily TWR from the Flex report, chained. It treats a temporary withholding as a loss and the refund as a gain, so the curve drops and then jumps back.</li>
+  <li><b>Money-weighted return</b>: Modified Dietz = total P&amp;L ÷ time-weighted average invested capital, i.e. how much your money actually earned, which depends on when you added it. XIRR is the annualized internal rate of return and is inflated for periods shorter than a year.</li>
+  <li><b>Benchmarks</b>: SPY and QQQ use dividend-adjusted closes, rebased to the account's start date. "Same cash flows in SPY" buys SPY on each deposit date and sells on each withdrawal date.</li>
+  <li><b>Risk metrics</b>: volatility, Sharpe (risk-free rate ${pct(M.rf, 1, false)}) and beta use only days after the account exceeded $5,000, to avoid noise from tiny early balances; annualized figures are unstable with less than a year of data.</li>
+  <li><b>P&amp;L by symbol</b>: FIFO realized + current unrealized + net dividends (after withholding tax); options are grouped under their underlying.</li>
+  <li>Data: IBKR Flex Web Service (${M.n_files} report file${M.n_files === 1 ? '' : 's'}, merged and de-duplicated); benchmark prices from Yahoo Finance.</li>
+</ul></details>
+</section>
+<footer>Generated locally from your own data for personal review. Not investment advice.</footer>
+`;
+
+/* ---------- explanation ---------- */
+(function () {
+  const w = [];
+  if (taxEv.length) {
+    const outs = taxEv.filter(e => e.amount < 0), backs = taxEv.filter(e => e.amount > 0);
+    const worst = outs.slice().sort((a, b) => a.ibkr - b.ibkr)[0], best = backs.slice().sort((a, b) => b.ibkr - a.ibkr)[0];
+    w.push(`<p><b>1. IBKR counted a temporary tax withholding as a loss.</b> From ${md(outs[0].date)} to ${md(outs[outs.length - 1].date)}, ${outs.length} withholding${outs.length === 1 ? '' : 's'} totaling ${money(-taxOut, 2)} were taken${backs.length ? `, and ${money(taxBack, 2)} was refunded on ${md(backs[0].date)}` : ''}. IBKR shows <b class="neg">${pct(worst.ibkr)}</b> on ${md(worst.date)}${best ? ` and <b class="pos">${pct(best.ibkr)}</b> on ${md(best.date)}` : ''}, but the actual investment return on those days was ${pct(worst.adj)}${best ? ' and ' + pct(best.adj) : ''}.</p>`);
+    w.push(`<p>Under IBKR's numbers the cumulative return was understated by up to <b>${pp(maxGap)}</b> (${md(gapDate)}) and the drawdown looked like ${pct(minIbkrDD, 1)}; the actual max drawdown is ${pct(K.mdd, 1)}. ${Math.abs(K.pending_tax) < 1 ? 'The withholding has been fully refunded, so the two curves end up close together again.' : `${money(-K.pending_tax, 2)} has not been refunded yet and is treated as cash held back for now.`}</p>`);
+  }
+  if (wdEv.length) {
+    const e = wdEv[wdEv.length - 1];
+    const i = S.dates.indexOf(e.date);
+    const navBefore = i > 0 ? S.nav[i - 1] : null;
+    w.push(`<p><b>${taxEv.length ? '2' : '1'}. A withdrawal does not affect the time-weighted return.</b> On ${md(e.date)} you withdrew ${money(-e.amount)}; IBKR's TWR for that day is ${pct(e.ibkr)} and the adjusted TWR is ${pct(e.adj)}, both normal. If a number you watch dropped after the withdrawal, it is likely a simple "NAV ÷ total deposits" return: before ${money(navBefore)} ÷ ${money(K.total_in)} − 1 = ${pct(navBefore / K.total_in - 1, 1)}, after ${money(e.nav)} ÷ ${money(K.total_in)} − 1 = ${pct(e.nav / K.total_in - 1, 1)}. The drop reflects money taken out, not an investment loss.</p>`);
+  }
+  if (!w.length) w.push('<p>No temporary withholdings or withdrawals in this period, so both measures are essentially the same.</p>');
+  document.getElementById('why').innerHTML = w.join('');
+
+  document.getElementById('tEv').innerHTML = `<tr><th class="l">Date</th><th class="l">Event</th><th>Amount</th><th>IBKR daily return</th><th>Adjusted daily return</th><th>NAV</th></tr>` +
+    ev.map(e => `<tr><td class="l">${e.date}</td><td class="l"><span class="tag ${evTag(e.kind)}">${e.kind}</span></td><td class="${cls(e.amount)}">${money(e.amount, 2, true)}</td><td class="${cls(e.ibkr)}">${pct(e.ibkr)}</td><td class="${cls(e.adj)}">${pct(e.adj)}</td><td>${money(e.nav)}</td></tr>`).join('');
+})();
+
+/* ---------- tables ---------- */
+(function () {
+  const heat = v => {
+    if (v == null) return '';
+    const a = Math.min(Math.abs(v) / 0.12, 1) * 0.55 + 0.06;
+    return `background:${v >= 0 ? `rgba(19,154,74,${a})` : `rgba(217,45,45,${a})`}`;
+  };
+  const has = s => D.months.some(r => r[s] != null);
+  const cols = [['account', 'Account (adjusted)'], ['ibkr', 'IBKR as reported']].concat(has('SPY') ? [['SPY', 'SPY']] : []).concat(has('QQQ') ? [['QQQ', 'QQQ']] : []);
+  let h = `<tr><th class="l">Month</th>${cols.map(c => `<th>${c[1]}</th>`).join('')}${has('SPY') ? '<th>Excess vs. SPY</th>' : ''}</tr>`;
+  const prod = k => D.months.reduce((a, r) => a * (1 + (r[k] ?? 0)), 1) - 1;
+  h += D.months.map(r => `<tr><td class="l">${r.m}</td>${cols.map(c => `<td style="${c[0] === 'account' ? heat(r[c[0]]) : ''}">${pct(r[c[0]])}</td>`).join('')}${has('SPY') ? `<td class="${cls(r.account - r.SPY)}">${r.SPY != null ? pp(r.account - r.SPY) : '—'}</td>` : ''}</tr>`).join('');
+  h += `<tr style="font-weight:650"><td class="l">Total</td>${cols.map(c => `<td>${pct(prod(c[0]))}</td>`).join('')}${has('SPY') ? `<td class="${cls(prod('account') - prod('SPY'))}">${pp(prod('account') - prod('SPY'))}</td>` : ''}</tr>`;
+  document.getElementById('tMon').innerHTML = h;
+
+  document.getElementById('tPos').innerHTML = `<tr><th class="l">Symbol</th><th class="l">Description</th><th class="l">Side</th><th>Quantity</th><th>Avg cost</th><th>Price</th><th>Value</th><th>% of NAV</th><th>Unrealized P&amp;L</th><th>Return</th></tr>` +
+    (D.positions.length ? D.positions.map(p => `<tr><td class="l"><b>${p.symbol}</b></td><td class="l dim">${(p.desc || '').slice(0, 28)}</td><td class="l"><span class="tag ${p.qty > 0 ? 't-in' : 't-out'}">${p.qty > 0 ? 'Long' : 'Short'}</span></td><td>${p.qty.toLocaleString()}</td><td>${num(p.avg)}</td><td>${num(p.mark)}</td><td>${money(p.value)}</td><td>${pct(p.value / K.nav, 1, false)}</td><td class="${cls(p.upnl)}">${money(p.upnl, 0, true)}</td><td class="${cls(p.upnl)}">${pct(p.upnl / Math.abs(p.cost || 1), 1)}</td></tr>`).join('')
+      : '<tr><td class="l dim" colspan="10">No open positions</td></tr>');
+
+  document.getElementById('tSym').innerHTML = `<tr><th class="l">Symbol</th><th>Realized</th><th>Unrealized</th><th>Net dividends</th><th>Total</th><th>Executions</th><th>Traded value</th><th>Commissions</th></tr>` +
+    syms.map(s => `<tr><td class="l"><b>${s.symbol}</b></td><td class="${cls(s.realized)}">${money(s.realized, 0, true)}</td><td class="${s.unrealized ? cls(s.unrealized) : 'dim'}">${s.unrealized ? money(s.unrealized, 0, true) : '—'}</td><td class="${s.div ? cls(s.div) : 'dim'}">${s.div ? money(s.div, 0, true) : '—'}</td><td class="${cls(s.total)}"><b>${money(s.total, 0, true)}</b></td><td>${s.n_exec}</td><td>${money(s.turnover)}</td><td>${money(s.comm, 0)}</td></tr>`).join('');
+
+  const chips = [
+    ['Closes', `${T.n_close ?? '—'}`, `long ${T.n_long ?? 0} · short ${T.n_short ?? 0}`],
+    ['Win rate', pct(T.win_rate, 1, false), `wins ${money(T.gross_win)} / losses ${money(T.gross_loss)}`],
+    ['Avg win / avg loss', `${money(T.avg_win)} / ${money(T.avg_loss)}`, `profit factor ${num(T.profit_factor)}`],
+    ['Long / short P&L', `<span class="${cls(T.long_pnl)}">${money(T.long_pnl, 0, true)}</span> / <span class="${cls(T.short_pnl)}">${money(T.short_pnl, 0, true)}</span>`, 'realized'],
+    ['Avg holding period', `${num(T.avg_hold_days, 1)} days`, `median ${num(T.median_hold_days, 1)} · intraday ${pct(T.intraday_share, 0, false)}`],
+    ['Traded value', money(T.turnover), `${num(T.turnover_x, 1)}× avg NAV · ${T.n_exec} executions`],
+    ['Commissions', money(T.commissions), `${pct(Math.abs(T.commissions) / Math.abs(K.pnl || 1), 1, false)} of P&L`],
+  ];
+  document.getElementById('tchips').innerHTML = chips.map(c => `<div class="chip"><div class="lab">${c[0]}</div><div class="val">${c[1]}</div><div class="lab">${c[2]}</div></div>`).join('');
+  const row = c => `<tr><td class="l">${c.tradeDate.slice(0, 4)}-${c.tradeDate.slice(4, 6)}-${c.tradeDate.slice(6)}</td><td class="l"><b>${c.u}</b></td><td class="l"><span class="tag ${c.side === 'long' ? 't-in' : 't-out'}">${c.side === 'long' ? 'Close long' : 'Cover short'}</span></td><td class="${cls(c.pnl)}">${money(c.pnl, 0, true)}</td></tr>`;
+  document.getElementById('tWin').innerHTML = D.top_win.map(row).join('') || '<tr><td class="l dim">None</td></tr>';
+  document.getElementById('tLoss').innerHTML = D.top_loss.map(row).join('') || '<tr><td class="l dim">None</td></tr>';
+
+  const F = D.fees, order = ['Dividends', 'Interest received', 'Withholding tax (dividends / interest)', 'Commissions', 'Margin interest', 'Borrow fees', 'Other fees', 'Temp. withholding not yet refunded'];
+  let fsum = 0;
+  document.getElementById('tFee').innerHTML = `<tr><th class="l">Item</th><th>Amount</th><th>% of total P&amp;L</th></tr>` +
+    order.filter(k => F[k] != null && Math.abs(F[k]) > 0.005).map(k => { fsum += F[k]; return `<tr><td class="l">${k}</td><td class="${cls(F[k])}">${money(F[k], 2, true)}</td><td class="dim">${pct(F[k] / K.pnl, 2)}</td></tr>`; }).join('') +
+    `<tr style="font-weight:650"><td class="l">Total</td><td class="${cls(fsum)}">${money(fsum, 2, true)}</td><td class="dim">${pct(fsum / K.pnl, 2)}</td></tr>`;
+})();
+
+/* ---------- charts ---------- */
+Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+Chart.defaults.font.size = 12;
+Chart.defaults.color = '#6b7385';
+Chart.defaults.borderColor = '#eceef2';
+Chart.defaults.plugins.legend.labels.boxWidth = 14;
+Chart.defaults.plugins.legend.labels.boxHeight = 3;
+Chart.defaults.animation = false;
+const pctAxis = {ticks: {callback: v => (v * 100).toFixed(0) + '%'}};
+const moneyAxis = {ticks: {callback: v => (v < 0 ? '-$' : '$') + (Math.abs(v) >= 1000 ? (Math.abs(v) / 1000).toFixed(0) + 'k' : Math.abs(v))}};
+const xAxis = {grid: {display: false}, ticks: {maxTicksLimit: 9, maxRotation: 0, callback(v) { return md(this.getLabelForValue(v)); }}};
+const line = (label, data, color, extra = {}) => Object.assign({label, data, borderColor: color, backgroundColor: color, borderWidth: 1.8, pointRadius: 0, pointHoverRadius: 3, tension: 0.15, spanGaps: true}, extra);
+const evColor = k => k === EV_WD ? '#d92d2d' : (k === EV_DEP ? '#139a4a' : '#7c4dff');
+
+/* main chart */
+let mainChart;
+function startIdx(r) {
+  if (r === 'all') return 0;
+  const last = new Date(S.dates[N - 1]);
+  let t = new Date(last);
+  if (r === '3m') t.setMonth(t.getMonth() - 3);
+  else if (r === '1m') t.setMonth(t.getMonth() - 1);
+  else if (r === 'ytd') t = new Date(last.getFullYear(), 0, 1);
+  const i = S.dates.findIndex(d => new Date(d) >= t);
+  return Math.max(0, i - 1);
+}
+function drawMain(r) {
+  const i0 = startIdx(r);
+  const rb = a => a.slice(i0).map(v => v == null ? null : (1 + v) / (1 + (a[i0] ?? 0)) - 1);
+  const labels = S.dates.slice(i0);
+  const adj = rb(S.adj);
+  const evMap = {};
+  ev.forEach(e => { (evMap[e.date] = evMap[e.date] || []).push(e); });
+  const evData = labels.map((d, i) => evMap[d] ? adj[i] : null);
+  const evCols = labels.map(d => evMap[d] ? evColor(evMap[d][0].kind) : 'transparent');
+  const ds = [
+    line('My account (adjusted)', adj, '#1f5eff', {borderWidth: 2.6, order: 1}),
+    line('IBKR as reported', rb(S.ibkr), '#a3abbd', {borderDash: [5, 4], borderWidth: 1.6, order: 3}),
+  ];
+  if (hasB('SPY')) ds.push(line('SPY', rb(S.SPY), '#f08c2e', {order: 2}));
+  if (hasB('QQQ')) ds.push(line('QQQ', rb(S.QQQ), '#16a06a', {order: 2}));
+  ds.push({label: 'Events', data: evData, showLine: false, pointStyle: 'triangle', pointRadius: 7, pointHoverRadius: 9, pointBackgroundColor: evCols, pointBorderColor: '#fff', pointBorderWidth: 1, borderColor: 'transparent', backgroundColor: '#7c4dff', order: 0});
+  if (mainChart) mainChart.destroy();
+  mainChart = new Chart(document.getElementById('cMain'), {
+    type: 'line', data: {labels, datasets: ds},
+    options: {
+      maintainAspectRatio: false, interaction: {mode: 'index', intersect: false},
+      scales: {x: xAxis, y: pctAxis},
+      plugins: {
+        legend: {position: 'top', align: 'start', labels: {filter: it => it.text !== 'Events'}},
+        tooltip: {callbacks: {
+          label: c => {
+            if (c.dataset.label === 'Events') { const es = evMap[c.label] || []; return es.map(e => `${e.kind} ${money(e.amount, 0, true)}`); }
+            return `${c.dataset.label}: ${pct(c.raw)}`;
+          }
+        }}
+      }
+    }
+  });
+}
+drawMain('all');
+document.querySelectorAll('#rng button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#rng button').forEach(x => x.classList.remove('on'));
+  b.classList.add('on'); drawMain(b.dataset.r);
+});
+
+/* zoom around the withholding */
+(function () {
+  const el = document.getElementById('cZoom');
+  if (!taxEv.length) { el.parentElement.parentElement.style.display = 'none'; return; }
+  const a = S.dates.indexOf(taxEv[0].date), b = S.dates.indexOf(taxEv[taxEv.length - 1].date);
+  const i0 = Math.max(0, a - 8), i1 = Math.min(N, b + 8);
+  const lab = S.dates.slice(i0, i1);
+  new Chart(el, {type: 'line', data: {labels: lab, datasets: [
+    line('Adjusted', S.adj.slice(i0, i1), '#1f5eff', {borderWidth: 2.4}),
+    line('IBKR as reported', S.ibkr.slice(i0, i1), '#a3abbd', {borderDash: [5, 4]}),
+  ]}, options: {maintainAspectRatio: false, interaction: {mode: 'index', intersect: false}, scales: {x: xAxis, y: pctAxis},
+    plugins: {legend: {position: 'top', align: 'start'}, tooltip: {callbacks: {label: c => `${c.dataset.label}: ${pct(c.raw)}`, afterBody: it => { const es = ev.filter(e => e.date === it[0].label); return es.map(e => `${e.kind} ${money(e.amount, 2, true)}`); }}}}}});
+})();
+
+/* NAV vs. contributions */
+(function () {
+  const ds = [
+    line('NAV', S.nav, '#1f5eff', {borderWidth: 2.4, fill: false}),
+    line('Net contributions', S.contrib, '#6b7385', {stepped: true, borderWidth: 1.6, tension: 0}),
+  ];
+  if (hasB('SPY')) ds.push(line('Same cash flows in SPY', S.sim_SPY, '#f08c2e', {borderDash: [5, 4]}));
+  new Chart(document.getElementById('cNav'), {type: 'line', data: {labels: S.dates, datasets: ds},
+    options: {maintainAspectRatio: false, interaction: {mode: 'index', intersect: false}, scales: {x: xAxis, y: moneyAxis},
+      plugins: {legend: {position: 'top', align: 'start'}, tooltip: {callbacks: {label: c => `${c.dataset.label}: ${money(c.raw)}`}}}}});
+})();
+
+/* drawdown */
+(function () {
+  const ds = [line('My account', S.dd_adj, '#1f5eff', {fill: 'origin', backgroundColor: 'rgba(31,94,255,.10)', borderWidth: 1.8})];
+  ds.push(line('IBKR as reported', S.dd_ibkr, '#a3abbd', {borderDash: [5, 4], borderWidth: 1.3}));
+  if (hasB('SPY')) ds.push(line('SPY', S.dd_SPY, '#f08c2e', {borderWidth: 1.4}));
+  if (hasB('QQQ')) ds.push(line('QQQ', S.dd_QQQ, '#16a06a', {borderWidth: 1.4}));
+  new Chart(document.getElementById('cDD'), {type: 'line', data: {labels: S.dates, datasets: ds},
+    options: {maintainAspectRatio: false, interaction: {mode: 'index', intersect: false}, scales: {x: xAxis, y: Object.assign({max: 0}, pctAxis)},
+      plugins: {legend: {position: 'top', align: 'start'}, tooltip: {callbacks: {label: c => `${c.dataset.label}: ${pct(c.raw, 1)}`}}}}});
+})();
+
+/* exposure */
+(function () {
+  new Chart(document.getElementById('cExpo'), {data: {labels: S.dates, datasets: [
+    {type: 'bar', label: 'Long value', data: S.long, backgroundColor: 'rgba(19,154,74,.55)', stack: 's', yAxisID: 'y', order: 1},
+    {type: 'bar', label: 'Short value', data: S.short, backgroundColor: 'rgba(217,45,45,.55)', stack: 's', yAxisID: 'y', order: 1},
+    Object.assign(line('Gross exposure / NAV', S.gross, '#1b2232', {borderWidth: 1.6}), {type: 'line', yAxisID: 'y1', order: 0}),
+  ]}, options: {maintainAspectRatio: false, interaction: {mode: 'index', intersect: false},
+    scales: {x: Object.assign({stacked: true}, xAxis), y: Object.assign({stacked: true}, moneyAxis), y1: {position: 'right', grid: {display: false}, ticks: {callback: v => v.toFixed(1) + '×'}}},
+    plugins: {legend: {position: 'top', align: 'start'}, tooltip: {callbacks: {label: c => c.dataset.yAxisID === 'y1' ? `${c.dataset.label}: ${num(c.raw)}×` : `${c.dataset.label}: ${money(c.raw)}`}}}}});
+})();
+
+/* P&L by symbol */
+(function () {
+  document.getElementById('symWrap').style.height = Math.max(260, syms.length * 22 + 40) + 'px';
+  new Chart(document.getElementById('cSym'), {type: 'bar', data: {labels: syms.map(s => s.symbol), datasets: [{label: 'P&L', data: syms.map(s => s.total), backgroundColor: syms.map(s => s.total >= 0 ? 'rgba(19,154,74,.75)' : 'rgba(217,45,45,.75)'), borderRadius: 3}]},
+    options: {indexAxis: 'y', maintainAspectRatio: false, scales: {x: moneyAxis, y: {grid: {display: false}, ticks: {autoSkip: false}}},
+      plugins: {legend: {display: false}, tooltip: {callbacks: {label: c => money(c.raw, 0, true)}}}}});
+})();
+
+/* trading activity */
+(function () {
+  const bm = T.by_month || [];
+  new Chart(document.getElementById('cAct'), {data: {labels: bm.map(x => x.month), datasets: [
+    {type: 'bar', label: 'Executions', data: bm.map(x => x.n), backgroundColor: 'rgba(31,94,255,.45)', yAxisID: 'y', borderRadius: 4, order: 1},
+    Object.assign(line('Traded value', bm.map(x => x.money), '#f08c2e', {borderWidth: 2, pointRadius: 3}), {type: 'line', yAxisID: 'y1', order: 0}),
+  ]}, options: {maintainAspectRatio: false, interaction: {mode: 'index', intersect: false},
+    scales: {x: {grid: {display: false}}, y: {title: {display: true, text: 'executions'}}, y1: Object.assign({position: 'right', grid: {display: false}}, moneyAxis)},
+    plugins: {legend: {position: 'top', align: 'start'}, tooltip: {callbacks: {label: c => c.dataset.yAxisID === 'y1' ? `Traded value: ${money(c.raw)}` : `Executions: ${c.raw}`}}}}});
+})();
+
+/* ---------- risk flags and trading style ---------- */
+(function () {
+  const F = D.flags || [];
+  const lvName = {high: 'High', mid: 'Medium', info: 'Info'};
+  document.getElementById('flags').innerHTML = F.length ? F.map(f => `<div class="flag ${f.level}"><div class="t"><span class="lv ${f.level}">${lvName[f.level]}</span>${f.title}</div><div class="x">${f.detail}</div></div>`).join('')
+    : '<div class="dim">No risk rules are triggered right now.</div>';
+  const nH = F.filter(f => f.level === 'high').length, nM = F.filter(f => f.level === 'mid').length;
+  document.querySelector('#riskCard h2').insertAdjacentHTML('beforeend', `<span class="cnt">high ${nH} · medium ${nM}</span>`);
+
+  const rows = D.style_rows || [], ch = D.style_changes || [];
+  if (rows.length < 2) { document.getElementById('styleCard').style.display = 'none'; }
+  else {
+    const last = rows[rows.length - 1];
+    document.getElementById('styleHint').textContent = `${last.month} vs. the ${rows[0].month} to ${rows[rows.length - 2].month} monthly average` + (D.style_note ? ' · ' + D.style_note : '');
+    document.getElementById('tChg').innerHTML = `<tr><th class="l">Metric</th><th>${last.month}</th><th>Earlier avg</th><th>Change</th></tr>` +
+      ch.map(c => `<tr class="${c.big ? 'big' : ''}"><td class="l">${c.name}</td><td><b>${c.latest}</b></td><td class="dim">${c.base}</td><td>${c.delta}</td></tr>`).join('');
+    const x = v => v == null ? '—' : v.toFixed(2) + '×';
+    const cols = [['ret', 'Return', v => pct(v, 1)], ['n_close', 'Closes', v => v ?? '—'], ['win_rate', 'Win rate', v => pct(v, 0, false)],
+      ['payoff', 'Payoff', v => num(v)], ['max_loss', 'Largest loss', v => v ? money(v) : '—'], ['short_share', 'Short share', v => pct(v, 0, false)],
+      ['avg_hold', 'Hold (days)', v => num(v, 1)], ['intraday', 'Intraday', v => pct(v, 0, false)], ['turnover_x', 'Turnover', x],
+      ['avg_gross', 'Avg exposure', x], ['max_gross', 'Max exposure', x], ['max_pos', 'Largest position', v => pct(v, 0, false)]];
+    document.getElementById('tStyle').innerHTML = `<tr><th class="l">Month</th>${cols.map(c => `<th>${c[1]}</th>`).join('')}</tr>` +
+      rows.map(r => `<tr><td class="l">${r.month}</td>${cols.map(c => `<td class="${c[0] === 'ret' ? cls(r[c[0]]) : (c[0] === 'max_loss' && r[c[0]] < 0 ? 'neg' : '')}">${c[2](r[c[0]])}</td>`).join('')}</tr>`).join('');
+  }
+
+  const RL = D.rolling;
+  if (RL && RL.dates.length) {
+    document.getElementById('rollCard').style.display = '';
+    document.getElementById('rollHint').textContent = `Rolling ${RL.window} trading days`;
+    new Chart(document.getElementById('cRoll'), {type: 'line', data: {labels: RL.dates, datasets: [
+      line('Rolling return', RL.ret, '#1f5eff', {yAxisID: 'y', borderWidth: 2.2}),
+      line('Rolling annualized volatility', RL.vol, '#f08c2e', {yAxisID: 'y'}),
+      line('Rolling Sharpe', RL.sharpe, '#16a06a', {yAxisID: 'y1', borderDash: [5, 4]}),
+    ]}, options: {maintainAspectRatio: false, interaction: {mode: 'index', intersect: false},
+      scales: {x: xAxis, y: pctAxis, y1: {position: 'right', grid: {display: false}}},
+      plugins: {legend: {position: 'top', align: 'start'}, tooltip: {callbacks: {label: c => c.dataset.yAxisID === 'y1' ? `${c.dataset.label}: ${num(c.raw)}` : `${c.dataset.label}: ${pct(c.raw, 1)}`}}}}});
+  }
+})();
+</script>
+</body>
+</html>

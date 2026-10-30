@@ -1,0 +1,26 @@
+{
+  "risk_free": 0.04,
+  "token_expiry": "",
+  "rolling_window": 63,
+  "rolling_min_days": 252,
+  "thresholds": {
+    "single_position_mid": 0.40,
+    "single_position_high": 0.60,
+    "gross_mid": 1.5,
+    "gross_high": 2.0,
+    "single_loss_nav": 0.02,
+    "loss_vs_avg_win": 5,
+    "hold_multiple": 3,
+    "hold_min_days": 7,
+    "drawdown_mid": 0.05,
+    "drawdown_high": 0.10,
+    "post_loss_day": -0.03,
+    "post_loss_multiple": 1.5,
+    "borrow_fee_multiple": 3,
+    "borrow_fee_min": 50,
+    "stale_business_days": 3,
+    "token_warn_days": 30,
+    "style_change_rel": 0.5,
+    "style_change_share_pp": 0.2
+  }
+}

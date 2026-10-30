@@ -4,6 +4,8 @@ Pull your Interactive Brokers account data automatically every day and turn it i
 
 Everything runs on your own computer through IBKR's official, read-only Flex Web Service. No trading permissions, no TWS or IB Gateway, and no data leaves your machine.
 
+**[Live demo →](https://wesleywang28.github.io/ibkr-flex-performance/)** (a fictitious, randomly generated account)
+
 ![Dashboard screenshot (demo data)](docs/screenshot.png)
 
 ## Why

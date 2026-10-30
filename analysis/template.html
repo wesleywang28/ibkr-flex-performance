@@ -74,8 +74,9 @@ const hasB = s => Array.isArray(S[s]);
 const EV_DEP = 'Deposit', EV_WD = 'Withdrawal', EV_TAX = 'Temp. withholding', EV_REF = 'Withholding refund';
 
 /* ---------- formatting ---------- */
+const CCY = ({USD: '$', EUR: '€', GBP: '£', JPY: '¥', CNH: '¥', CNY: '¥', HKD: 'HK$', SGD: 'S$', CAD: 'C$', AUD: 'A$', CHF: 'CHF '})[M.currency] ?? ((M.currency || '') + ' ');
 const money = (v, dp = 0, sign = false) => v == null ? '—' :
-  (v < 0 ? '-$' : (sign && v > 0 ? '+$' : '$')) + Math.abs(v).toLocaleString('en-US', {minimumFractionDigits: dp, maximumFractionDigits: dp});
+  (v < 0 ? '-' : (sign && v > 0 ? '+' : '')) + CCY + Math.abs(v).toLocaleString('en-US', {minimumFractionDigits: dp, maximumFractionDigits: dp});
 const pct = (v, dp = 2, sign = true) => v == null ? '—' : ((sign && v > 0) ? '+' : '') + (v * 100).toFixed(dp) + '%';
 const num = (v, dp = 2) => v == null ? '—' : v.toFixed(dp);
 const cls = v => v == null ? '' : (v >= 0 ? 'pos' : 'neg');
@@ -105,7 +106,7 @@ const grossExpo = K.long_mv - K.short_mv;
 /* ---------- key observations ---------- */
 const ins = [];
 if (spyCum != null) ins.push(`Over the same period (${md(M.start)} to ${md(M.end)}) the time-weighted return was <b class="${cls(K.cum_adj)}">${pct(K.cum_adj)}</b> vs. SPY ${pct(spyCum)}${qqqCum != null ? ' and QQQ ' + pct(qqqCum) : ''}, an excess of about <b>${pp(K.cum_adj - spyCum)}</b>.`);
-if (hasB('SPY')) ins.push(`Had every deposit and withdrawal gone into SPY instead, the account would be worth about ${money(B.SPY.sim_end)} (P&L ${money(B.SPY.sim_pnl, 0, true)}); the actual account is ${money(K.nav)} (P&L ${money(K.pnl, 0, true)}).`);
+if (hasB('SPY')) ins.push(`Had ${K.pre_existing ? 'the starting value and every deposit and withdrawal' : 'every deposit and withdrawal'} gone into SPY instead, the account would be worth about ${money(B.SPY.sim_end)} (P&L ${money(B.SPY.sim_pnl, 0, true)}); the actual account is ${money(K.nav)} (P&L ${money(K.pnl, 0, true)}).`);
 if (hasB('SPY') && B.SPY.beta != null) ins.push(`Beta to SPY is ${num(B.SPY.beta)} with a correlation of ${num(B.SPY.corr)}${Math.abs(B.SPY.corr) < 0.5 ? ': the account moves largely independently of the market, so returns come mostly from stock selection and trading' : ''}.`);
 if (top5.length) ins.push(`Concentration of gains: the top ${top5.length} symbols (${top5.map(s => s.symbol).join(', ')}) account for ${(top5Share * 100).toFixed(0)}% of total P&L.`);
 if (T.win_rate != null) ins.push(`Win rate on closes is ${pct(T.win_rate, 1, false)}; the average loss (${money(T.avg_loss)}) is ${Math.abs(T.avg_loss) > T.avg_win ? 'larger' : 'smaller'} than the average win (${money(T.avg_win)}), a payoff ratio of ${num(T.avg_win / Math.abs(T.avg_loss || 1))}.${syms.length && syms[syms.length - 1].total < 0 ? ' The biggest loser is ' + syms[syms.length - 1].symbol + ' (' + money(syms[syms.length - 1].total) + ').' : ''}`);
@@ -116,9 +117,9 @@ if (D.positions.length) ins.push(`Currently long ${money(K.long_mv)} and short $
 const kpis = [
   {hero: true, lab: 'Time-weighted return (adjusted)', val: pct(K.cum_adj), c: cls(K.cum_adj), note: hasTax ? `IBKR shows ${pct(K.cum_ibkr)} · excludes cash flows and temp. withholding` : `IBKR shows ${pct(K.cum_ibkr)} · excludes deposits and withdrawals`},
   {lab: 'SPY / QQQ, same period', val: `${pct(spyCum)}<span class="dim" style="font-size:16px"> / ${pct(qqqCum)}</span>`, note: spyCum != null ? `${pp(K.cum_adj - spyCum)} vs. SPY` : 'No benchmark data'},
-  {lab: 'Total P&L', val: money(K.pnl, 0, true), c: cls(K.pnl), note: `NAV ${money(K.nav)} − net contributions ${money(K.contrib)}`},
+  {lab: 'Total P&L', val: money(K.pnl, 0, true), c: cls(K.pnl), note: `NAV ${money(K.nav)} − net contributions ${money(K.contrib)}${K.pre_existing ? ' (incl. starting value)' : ''}`},
   {lab: 'Money-weighted return (Modified Dietz)', val: pct(K.mdietz), c: cls(K.mdietz), note: `XIRR ${pct(K.irr, 0)} annualized${K.n_days < 252 ? ' (under a year; indicative only)' : ''}`},
-  {lab: 'Net asset value', val: money(K.nav), note: `Deposits ${money(K.total_in)} · withdrawals ${money(K.total_out)}`},
+  {lab: 'Net asset value', val: money(K.nav), note: `${K.pre_existing ? `Starting value ${money(K.start_value)} · ` : ''}Deposits ${money(K.total_in)} · withdrawals ${money(K.total_out)}`},
   {lab: 'Max drawdown', val: pct(K.mdd), c: 'neg', note: `${md(K.mdd_peak)} → ${md(K.mdd_trough)}, ${K.mdd_rec ? 'recovered ' + md(K.mdd_rec) : 'not yet recovered'}`},
   {lab: 'Annualized volatility / Sharpe', val: `${pct(K.vol, 1, false)}<span class="dim" style="font-size:16px"> / ${num(K.sharpe)}</span>`, note: `SPY volatility ${hasB('SPY') ? pct(B.SPY.vol, 1, false) : '—'} · Sortino ${num(K.sortino)}`},
   {lab: 'Best / worst day', val: `<span class="pos">${pct(K.best[1], 1)}</span><span class="dim" style="font-size:16px"> / </span><span class="neg">${pct(K.worst[1], 1)}</span>`, note: `${md(K.best[0])} / ${md(K.worst[0])} · up days ${pct(K.pos_days, 0, false)}`},
@@ -208,9 +209,9 @@ document.getElementById('app').innerHTML = `
 <section>
 <details><summary>Methodology</summary>
 <ul>
-  <li><b>Adjusted TWR</b>: daily return = (ending NAV − starting NAV − external cash flow) ÷ (starting NAV + that day's inflow). External cash flows are deposits, withdrawals, asset transfers and <b>temporary tax withholdings (transactionTax)</b>: a withholding is treated as cash temporarily leaving the account and the refund as cash coming back, so neither counts as investment P&amp;L. Daily returns are chained.</li>
+  <li><b>Adjusted TWR</b>: daily return = (ending NAV − starting NAV − external cash flow) ÷ (starting NAV + that day's inflow). External cash flows are deposits, withdrawals, asset transfers and <b>temporary tax withholdings</b>: a transactionTax amount that IBKR later refunds is treated as cash temporarily leaving the account and the refund as cash coming back, so neither counts as investment P&amp;L. Transaction tax that is never refunded (e.g. stamp duty) stays in P&amp;L as a cost. Daily returns are chained.</li>
   <li><b>IBKR as reported</b>: IBKR's own daily TWR from the Flex report, chained. It treats a temporary withholding as a loss and the refund as a gain, so the curve drops and then jumps back.</li>
-  <li><b>Money-weighted return</b>: Modified Dietz = total P&amp;L ÷ time-weighted average invested capital, i.e. how much your money actually earned, which depends on when you added it. XIRR is the annualized internal rate of return and is inflated for periods shorter than a year.</li>
+  <li><b>Money-weighted return</b>: Modified Dietz = total P&amp;L ÷ time-weighted average invested capital (if the account existed before the first day in the data, its NAV on that day counts as starting capital), i.e. how much your money actually earned, which depends on when you added it. XIRR is the annualized internal rate of return and is inflated for periods shorter than a year.</li>
   <li><b>Benchmarks</b>: SPY and QQQ use dividend-adjusted closes, rebased to the account's start date. "Same cash flows in SPY" buys SPY on each deposit date and sells on each withdrawal date.</li>
   <li><b>Risk metrics</b>: volatility, Sharpe (risk-free rate ${pct(M.rf, 1, false)}) and beta use only days after the account exceeded $5,000, to avoid noise from tiny early balances; annualized figures are unstable with less than a year of data.</li>
   <li><b>P&amp;L by symbol</b>: FIFO realized + current unrealized + net dividends (after withholding tax); options are grouped under their underlying.</li>
@@ -233,7 +234,10 @@ document.getElementById('app').innerHTML = `
     const e = wdEv[wdEv.length - 1];
     const i = S.dates.indexOf(e.date);
     const navBefore = i > 0 ? S.nav[i - 1] : null;
-    w.push(`<p><b>${taxEv.length ? '2. ' : ''}A withdrawal does not affect the time-weighted return.</b> On ${md(e.date)} you withdrew ${money(-e.amount)}; IBKR's TWR for that day is ${pct(e.ibkr)} and the adjusted TWR is ${pct(e.adj)}, both normal. If a number you watch dropped after the withdrawal, it is likely a simple "NAV ÷ total deposits" return: before ${money(navBefore)} ÷ ${money(K.total_in)} − 1 = ${pct(navBefore / K.total_in - 1, 1)}, after ${money(e.nav)} ÷ ${money(K.total_in)} − 1 = ${pct(e.nav / K.total_in - 1, 1)}. The drop reflects money taken out, not an investment loss.</p>`);
+    const paidIn = (K.start_value || 0) + K.total_in, paidLab = K.pre_existing ? 'starting value + deposits' : 'total deposits';
+    const example = navBefore != null && paidIn > 0
+      ? ` If a number you watch dropped after the withdrawal, it is likely a simple "NAV ÷ ${paidLab}" return: before ${money(navBefore)} ÷ ${money(paidIn)} − 1 = ${pct(navBefore / paidIn - 1, 1)}, after ${money(e.nav)} ÷ ${money(paidIn)} − 1 = ${pct(e.nav / paidIn - 1, 1)}. The drop reflects money taken out, not an investment loss.` : '';
+    w.push(`<p><b>${taxEv.length ? '2. ' : ''}A withdrawal does not affect the time-weighted return.</b> On ${md(e.date)} you withdrew ${money(-e.amount)}; IBKR's TWR for that day is ${pct(e.ibkr)} and the adjusted TWR is ${pct(e.adj)}, both normal.${example}</p>`);
   }
   document.getElementById('why').innerHTML = w.join('');
   if (!hasTax) {
@@ -282,7 +286,7 @@ document.getElementById('app').innerHTML = `
   document.getElementById('tWin').innerHTML = D.top_win.map(row).join('') || '<tr><td class="l dim">None</td></tr>';
   document.getElementById('tLoss').innerHTML = D.top_loss.map(row).join('') || '<tr><td class="l dim">None</td></tr>';
 
-  const F = D.fees, order = ['Dividends', 'Interest received', 'Withholding tax (dividends / interest)', 'Commissions', 'Margin interest', 'Borrow fees', 'Other fees', 'Temp. withholding not yet refunded'];
+  const F = D.fees, order = ['Dividends', 'Interest received', 'Withholding tax (dividends / interest)', 'Commissions', 'Margin interest', 'Borrow fees', 'Transaction tax (not refunded)', 'Other fees', 'Temp. withholding not yet refunded'];
   let fsum = 0;
   document.getElementById('tFee').innerHTML = `<tr><th class="l">Item</th><th>Amount</th><th>% of total P&amp;L</th></tr>` +
     order.filter(k => F[k] != null && Math.abs(F[k]) > 0.005).map(k => { fsum += F[k]; return `<tr><td class="l">${k}</td><td class="${cls(F[k])}">${money(F[k], 2, true)}</td><td class="dim">${pct(F[k] / K.pnl, 2)}</td></tr>`; }).join('') +
@@ -298,7 +302,7 @@ Chart.defaults.plugins.legend.labels.boxWidth = 14;
 Chart.defaults.plugins.legend.labels.boxHeight = 3;
 Chart.defaults.animation = false;
 const pctAxis = {ticks: {callback: v => (v * 100).toFixed(0) + '%'}};
-const moneyAxis = {ticks: {callback: v => (v < 0 ? '-$' : '$') + (Math.abs(v) >= 1000 ? (Math.abs(v) / 1000).toFixed(0) + 'k' : Math.abs(v))}};
+const moneyAxis = {ticks: {callback: v => (v < 0 ? '-' : '') + CCY + (Math.abs(v) >= 1000 ? (Math.abs(v) / 1000).toFixed(0) + 'k' : Math.abs(v))}};
 const xAxis = {grid: {display: false}, ticks: {maxTicksLimit: 9, maxRotation: 0, callback(v) { return md(this.getLabelForValue(v)); }}};
 const line = (label, data, color, extra = {}) => Object.assign({label, data, borderColor: color, backgroundColor: color, borderWidth: 1.8, pointRadius: 0, pointHoverRadius: 3, tension: 0.15, spanGaps: true}, extra);
 const evColor = k => k === EV_WD ? '#d92d2d' : (k === EV_DEP ? '#139a4a' : '#7c4dff');

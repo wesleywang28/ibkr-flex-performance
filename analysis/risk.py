@@ -32,8 +32,16 @@ MONTH_RE = re.compile(r"FOR ([A-Z]{3})-(\d{4})")
 MON = dict(JAN=1, FEB=2, MAR=3, APR=4, MAY=5, JUN=6, JUL=7, AUG=8, SEP=9, OCT=10, NOV=11, DEC=12)
 
 
+CCY_SYMBOL = dict(USD="$", EUR="€", GBP="£", JPY="¥", CNH="¥", CNY="¥", HKD="HK$", SGD="S$", CAD="C$", AUD="A$", CHF="CHF ")
+_CUR = {"sym": "$"}
+
+
+def set_currency(code: str):
+    _CUR["sym"] = CCY_SYMBOL.get((code or "USD").upper(), (code or "") + " ")
+
+
 def money(v: float) -> str:
-    return ("-$" if v < 0 else "$") + f"{abs(v):,.0f}"
+    return ("-" if v < 0 else "") + _CUR["sym"] + f"{abs(v):,.0f}"
 
 
 def pct(v: float, dp: int = 1) -> str:
@@ -73,7 +81,7 @@ def monthly_style(R: dict) -> list[dict]:
         t = tdf[tdf["month"] == m] if not tdf.empty else tdf
         if len(t):
             row.update(n_exec=int(len(t)), n_symbols=int(t["u"].nunique()),
-                       turnover_x=float(t["tradeMoney"].abs().sum() / avg_nav) if avg_nav else None,
+                       turnover_x=float(t["money_base"].sum() / avg_nav) if avg_nav else None,
                        exec_per_day=float(len(t) / max(len(days_m), 1)))
         h = hold[pd.to_datetime(hold["dt"]).dt.strftime("%Y-%m") == m] if len(hold) else hold
         if len(h) and h["amt"].sum() > 0:
@@ -144,10 +152,16 @@ def risk_flags(R: dict, rows: list[dict], T: dict) -> list[dict]:
     S = R.get("settings", {})
 
     # ---- data and account status ----
-    if abs(R["pending_tax"]) >= 1:
+    if R["pending_tax"] <= -1:      # only possible with transaction_tax = "temporary"
         add("high", "Temporary withholding not yet refunded",
             f"{money(-R['pending_tax'])} of transactionTax has not been refunded. The adjusted TWR treats it as cash held back for now; "
             "if it is never refunded, your real return is lower by that amount.")
+    if R.get("tax_cost", 0) <= -1:
+        add("info" if R.get("tax_mode") == "cost" else "mid", f"Transaction tax counted as a cost: {money(R['tax_cost'])}",
+            "IBKR recorded this as transactionTax and it has not been refunded, so it is included in P&L. "
+            "If it is a temporary withholding, the return is corrected automatically once the refund appears; "
+            "if it is stamp duty or a financial transaction tax, it is a real cost. "
+            "Set \"transaction_tax\" in analysis/settings.json to change this treatment.")
     today = pd.Timestamp(R.get("as_of") or datetime.now().date())
     lag = len(pd.bdate_range(end + pd.Timedelta(days=1), today)) - 1
     if lag > T["stale_business_days"]:
@@ -290,6 +304,7 @@ def rolling_metrics(R: dict) -> dict | None:
 
 
 def analyze_style_risk(R: dict) -> dict:
+    set_currency(R.get("currency", "USD"))
     T = dict(DEFAULT_T, **R.get("settings", {}).get("thresholds", {}))
     rows = monthly_style(R)
     note, changes = style_changes(rows, T)

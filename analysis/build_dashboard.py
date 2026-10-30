@@ -125,6 +125,7 @@ def build(root: str, demo: bool = False, snapshot: bool = True) -> str:
                   rf=engine.RISK_FREE, demo=demo),
         kpi=dict(nav=R["nav_end"], contrib=R["net_contrib"], total_in=R["total_in"], total_out=R["total_out"],
                  pnl=R["pnl"], pnl_ex_tax=R["pnl_ex_tax"], pending_tax=R["pending_tax"],
+                 start_value=R["start_value"], pre_existing=R["pre_existing"], tax_cost=R["tax_cost"],
                  cum_adj=R["cum_adj"], cum_ibkr=R["cum_ibkr"], cum_raw=R["cum_raw"],
                  mdietz=R["mdietz"], irr=R["irr"], ann=R["ann_ret"], n_days=R["n_days"],
                  vol=R["vol"], sharpe=R["sharpe"], sortino=R["sortino"],
@@ -162,13 +163,15 @@ def print_summary(R: dict, root: str):
     prev = json.load(open(snap_fp, encoding="utf-8")) if os.path.exists(snap_fp) else None
     end = R["end_date"].strftime("%Y-%m-%d")
     spy = R["bench"].get("SPY")
+    m = lambda v, sign=False: ("+" if sign and v > 0 else "") + risk.money(v)
     lines = [f"Data through {end} ({R['n_days']} trading days)",
-             f"NAV ${R['nav_end']:,.0f}, total P&L ${R['pnl']:+,.0f}, net contributions ${R['net_contrib']:,.0f}",
+             f"NAV {m(R['nav_end'])}, total P&L {m(R['pnl'], True)}, net contributions {m(R['net_contrib'])}" +
+             (f" (incl. starting value {m(R['start_value'])})" if R["pre_existing"] else ""),
              f"Latest day {d['r_adj'].iloc[-1]:+.2%}" + (f" (SPY {spy['idx'].iloc[-1] / spy['idx'].iloc[-2] - 1:+.2%})" if spy else ""),
              f"Cumulative TWR {R['cum_adj']:+.2%} (IBKR shows {R['cum_ibkr']:+.2%})" + (f", SPY {spy['cum']:+.2%}" if spy else ""),
              f"Max drawdown {R['mdd']:.2%}, annualized volatility {R['vol']:.1%}, Sharpe {(R['sharpe'] or 0):.2f}"]
     if prev and prev.get("end") != end:
-        lines.append(f"Since last update ({prev['end']}): NAV ${R['nav_end'] - prev['nav']:+,.0f}, "
+        lines.append(f"Since last update ({prev['end']}): NAV {m(R['nav_end'] - prev['nav'], True)}, "
                      f"TWR {(1 + R['cum_adj']) / (1 + prev['cum_adj']) - 1:+.2%}, {R['trade_stats'].get('n_exec', 0) - prev.get('n_exec', 0)} new executions")
     elif prev:
         lines.append("(Same data date as last time; no new trading days)")
@@ -190,7 +193,7 @@ def print_summary(R: dict, root: str):
         lines.append(X["style_note"])
     for e in R["events"]:
         if prev and e["date"].strftime("%Y-%m-%d") > prev["end"] and abs(e["amount"]) >= 100:
-            lines.append(f"New event: {e['date']:%Y-%m-%d} {e['kind']} ${e['amount']:+,.2f}")
+            lines.append(f"New event: {e['date']:%Y-%m-%d} {e['kind']} {m(e['amount'], True)}")
     print("\n".join(lines))
     json.dump(dict(end=end, nav=R["nav_end"], cum_adj=R["cum_adj"], n_exec=R["trade_stats"].get("n_exec", 0)),
               open(snap_fp, "w", encoding="utf-8"))

@@ -1,4 +1,5 @@
 {
+  "language": "en",
   "risk_free": 0.04,
   "transaction_tax": "auto",
   "token_expiry": "",

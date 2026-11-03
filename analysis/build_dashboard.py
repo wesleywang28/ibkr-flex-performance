@@ -5,6 +5,7 @@ Usage:
   python analysis/build_dashboard.py                 # uses data/ under the project root
   python analysis/build_dashboard.py <project root>
   python analysis/build_dashboard.py demo --demo     # demo data (run demo/generate_demo.py first)
+  python analysis/build_dashboard.py --lang zh       # Chinese dashboard (default: "language" in settings.json, else English)
 
 Output:
   <root>/ibkr_dashboard.html                  latest dashboard (overwritten each run)
@@ -83,12 +84,19 @@ def chartjs_tag() -> str:
     return f'<script src="{CHARTJS_CDNS[0]}"></script>'
 
 
-def build(root: str, demo: bool = False, snapshot: bool = True) -> str:
+def get_lang(lang: str | None = None) -> str:
+    """Dashboard language: --lang overrides settings.json -> "language"; anything starting with "zh" is Chinese."""
+    v = str(lang or engine.SETTINGS.get("language") or "en").lower()
+    return "zh" if v.startswith("zh") else "en"
+
+
+def build(root: str, demo: bool = False, snapshot: bool = True, lang: str | None = None) -> str:
+    lang = get_lang(lang)
     R = engine.analyze(root)
     if demo:
         R["as_of"] = R["end_date"]          # demo data: don't flag the data as stale
         R["settings"] = dict(R["settings"], token_expiry="")
-    X = risk.analyze_style_risk(R)
+    X = risk.analyze_style_risk(R, lang=lang)
     R["_x"] = X
     d = R["d"]
     dates = [x.strftime("%Y-%m-%d") for x in d.index]
@@ -103,6 +111,10 @@ def build(root: str, demo: bool = False, snapshot: bool = True) -> str:
         dd_adj=ser(R["dd"]), dd_ibkr=ser(R["dd_ibkr"]),
         long=ser(R["expo"]["long"], 2), short=ser(R["expo"]["short"], 2),
         gross=ser(R["expo"]["gross_lev"], 4), net=ser(R["expo"]["net_lev"], 4),
+        # cumulative and daily P&L on the same basis as the adjusted TWR (excluding external cash flows
+        # and temporary withholdings); used by the return chart and the daily calendar
+        pnl=ser(d["end"] - d["net_contrib"] - d["pending_tax"], 2),
+        pnl_day=ser((d["end"] - d["start"] - d["flow_adj"]).where(d.index != d.index[0], 0.0), 2),
     )
     bench = {}
     for sym, b in R["bench"].items():
@@ -122,7 +134,7 @@ def build(root: str, demo: bool = False, snapshot: bool = True) -> str:
         meta=dict(account=masked, currency=R["account"].get("currency", "USD"),
                   opened=R["account"].get("dateOpened", ""), start=R["base_date"], end=R["end_date"],
                   generated=datetime.now().strftime("%Y-%m-%d %H:%M"), n_files=len(R["files"]),
-                  rf=engine.RISK_FREE, demo=demo),
+                  rf=engine.RISK_FREE, demo=demo, lang=lang),
         kpi=dict(nav=R["nav_end"], contrib=R["net_contrib"], total_in=R["total_in"], total_out=R["total_out"],
                  pnl=R["pnl"], pnl_ex_tax=R["pnl_ex_tax"], pending_tax=R["pending_tax"],
                  start_value=R["start_value"], pre_existing=R["pre_existing"], tax_cost=R["tax_cost"],
@@ -155,8 +167,12 @@ def build(root: str, demo: bool = False, snapshot: bool = True) -> str:
     return out
 
 
+EVENT_ZH = {"Deposit": "入金", "Withdrawal": "提现", "Temp. withholding": "临时预扣", "Withholding refund": "预扣退回"}
+
+
 def print_summary(R: dict, root: str):
-    """Print a short text summary and compare it with the previous run."""
+    """Print a short text summary (in the dashboard language) and compare it with the previous run."""
+    t = risk.tr                      # language was set by risk.analyze_style_risk()
     d = R["d"]
     os.makedirs(os.path.join(root, "data"), exist_ok=True)
     snap_fp = os.path.join(root, "data", "last_summary.json")
@@ -164,36 +180,47 @@ def print_summary(R: dict, root: str):
     end = R["end_date"].strftime("%Y-%m-%d")
     spy = R["bench"].get("SPY")
     m = lambda v, sign=False: ("+" if sign and v > 0 else "") + risk.money(v)
-    lines = [f"Data through {end} ({R['n_days']} trading days)",
-             f"NAV {m(R['nav_end'])}, total P&L {m(R['pnl'], True)}, net contributions {m(R['net_contrib'])}" +
-             (f" (incl. starting value {m(R['start_value'])})" if R["pre_existing"] else ""),
-             f"Latest day {d['r_adj'].iloc[-1]:+.2%}" + (f" (SPY {spy['idx'].iloc[-1] / spy['idx'].iloc[-2] - 1:+.2%})" if spy else ""),
-             f"Cumulative TWR {R['cum_adj']:+.2%} (IBKR shows {R['cum_ibkr']:+.2%})" + (f", SPY {spy['cum']:+.2%}" if spy else ""),
-             f"Max drawdown {R['mdd']:.2%}, annualized volatility {R['vol']:.1%}, Sharpe {(R['sharpe'] or 0):.2f}"]
+    spy_day = spy["idx"].iloc[-1] / spy["idx"].iloc[-2] - 1 if spy else None
+    lines = [t(f"Data through {end} ({R['n_days']} trading days)", f"数据截至 {end}（{R['n_days']} 个交易日）"),
+             t(f"NAV {m(R['nav_end'])}, total P&L {m(R['pnl'], True)}, net contributions {m(R['net_contrib'])}",
+               f"净值 {m(R['nav_end'])}，累计盈亏 {m(R['pnl'], True)}，净投入 {m(R['net_contrib'])}") +
+             (t(f" (incl. starting value {m(R['start_value'])})", f"（含初始本金 {m(R['start_value'])}）") if R["pre_existing"] else ""),
+             t(f"Latest day {d['r_adj'].iloc[-1]:+.2%}", f"最新交易日 {d['r_adj'].iloc[-1]:+.2%}") +
+             (t(f" (SPY {spy_day:+.2%})", f"（SPY {spy_day:+.2%}）") if spy else ""),
+             t(f"Cumulative TWR {R['cum_adj']:+.2%} (IBKR shows {R['cum_ibkr']:+.2%})", f"累计 TWR {R['cum_adj']:+.2%}（IBKR 显示 {R['cum_ibkr']:+.2%}）") +
+             (t(f", SPY {spy['cum']:+.2%}", f"，SPY {spy['cum']:+.2%}") if spy else ""),
+             t(f"Max drawdown {R['mdd']:.2%}, annualized volatility {R['vol']:.1%}, Sharpe {(R['sharpe'] or 0):.2f}",
+               f"最大回撤 {R['mdd']:.2%}，年化波动 {R['vol']:.1%}，夏普 {(R['sharpe'] or 0):.2f}")]
     if prev and prev.get("end") != end:
-        lines.append(f"Since last update ({prev['end']}): NAV {m(R['nav_end'] - prev['nav'], True)}, "
-                     f"TWR {(1 + R['cum_adj']) / (1 + prev['cum_adj']) - 1:+.2%}, {R['trade_stats'].get('n_exec', 0) - prev.get('n_exec', 0)} new executions")
+        nav_chg, twr_chg = m(R['nav_end'] - prev['nav'], True), (1 + R['cum_adj']) / (1 + prev['cum_adj']) - 1
+        n_new = R['trade_stats'].get('n_exec', 0) - prev.get('n_exec', 0)
+        lines.append(t(f"Since last update ({prev['end']}): NAV {nav_chg}, TWR {twr_chg:+.2%}, {n_new} new executions",
+                       f"自上次更新（{prev['end']}）：净值 {nav_chg}，TWR {twr_chg:+.2%}，新增成交 {n_new} 笔"))
     elif prev:
-        lines.append("(Same data date as last time; no new trading days)")
-    last_trades = [t for t in R["closes"] if t["tradeDate"] == R["end_date"].strftime("%Y%m%d")]
+        lines.append(t("(Same data date as last time; no new trading days)", "（数据日期和上次相同，没有新的交易日）"))
+    sep = t(", ", "，")
+    last_trades = [x for x in R["closes"] if x["tradeDate"] == R["end_date"].strftime("%Y%m%d")]
     if last_trades:
-        lines.append("Closed on the latest day: " + ", ".join(f"{t['u']} {t['pnl']:+,.0f}" for t in last_trades))
-    lines.append("Positions: " + (", ".join(f"{p['symbol']} {'long' if p['qty'] > 0 else 'short'} {abs(p['qty']):,.0f} ({p['upnl']:+,.0f})" for p in R["positions"]) or "none"))
+        lines.append(t("Closed on the latest day: ", "最新交易日平仓：") + sep.join(f"{x['u']} {x['pnl']:+,.0f}" for x in last_trades))
+    lines.append(t("Positions: ", "当前持仓：") + (sep.join(
+        f"{p['symbol']} {t('long', '多') if p['qty'] > 0 else t('short', '空')} {abs(p['qty']):,.0f}" + t(f" ({p['upnl']:+,.0f})", f"（{p['upnl']:+,.0f}）") for p in R["positions"]) or t("none", "空仓")))
     X = R.get("_x", {})
     fl = [x for x in X.get("flags", []) if x["level"] in ("high", "mid")]
     if fl:
-        lines.append("Risk flags:")
-        lines += [f"  [{'HIGH' if x['level'] == 'high' else 'MEDIUM'}] {x['title']}" for x in fl]
+        lines.append(t("Risk flags:", "风险提示："))
+        lines += [f"  [{t('HIGH', '高') if x['level'] == 'high' else t('MEDIUM', '中')}] {x['title']}" for x in fl]
     ch = [c for c in X.get("style_changes", []) if c["big"]]
     if ch:
         month = X["style_rows"][-1]["month"]
-        lines.append(f"Trading-style changes ({month} vs. earlier monthly average): " +
-                     "; ".join(f"{c['name']} {c['latest']} (was {c['base']}, {c['delta']})" for c in ch))
+        lines.append(t(f"Trading-style changes ({month} vs. earlier monthly average): ", f"交易风格变化（{month} vs 此前月均）：") +
+                     t("; ", "；").join(t(f"{c['name']} {c['latest']} (was {c['base']}, {c['delta']})",
+                                         f"{c['name']} {c['latest']}（此前 {c['base']}，{c['delta']}）") for c in ch))
     if X.get("style_note"):
         lines.append(X["style_note"])
     for e in R["events"]:
         if prev and e["date"].strftime("%Y-%m-%d") > prev["end"] and abs(e["amount"]) >= 100:
-            lines.append(f"New event: {e['date']:%Y-%m-%d} {e['kind']} {m(e['amount'], True)}")
+            kind = t(e["kind"], EVENT_ZH.get(e["kind"], e["kind"]))
+            lines.append(t(f"New event: {e['date']:%Y-%m-%d} {kind} {m(e['amount'], True)}", f"新事件：{e['date']:%Y-%m-%d} {kind} {m(e['amount'], True)}"))
     print("\n".join(lines))
     json.dump(dict(end=end, nav=R["nav_end"], cum_adj=R["cum_adj"], n_exec=R["trade_stats"].get("n_exec", 0)),
               open(snap_fp, "w", encoding="utf-8"))
@@ -204,8 +231,9 @@ if __name__ == "__main__":
     ap.add_argument("root", nargs="?", default=os.path.dirname(HERE), help="project root (the folder that contains data/)")
     ap.add_argument("--demo", action="store_true", help="demo mode: skip the stale-data and token-expiry checks")
     ap.add_argument("--no-snapshot", action="store_true", help="don't write a monthly snapshot to reports/")
+    ap.add_argument("--lang", choices=["en", "zh"], help='dashboard language; overrides "language" in analysis/settings.json')
     a = ap.parse_args()
     try:
-        print(build(os.path.abspath(a.root), demo=a.demo, snapshot=not a.no_snapshot))
+        print(build(os.path.abspath(a.root), demo=a.demo, snapshot=not a.no_snapshot, lang=a.lang))
     except FileNotFoundError as e:
         sys.exit(f"{e}\nNo account data yet: run run_pull.bat first, or preview with demo data via demo/generate_demo.py.")

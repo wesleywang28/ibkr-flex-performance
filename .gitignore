@@ -9,6 +9,7 @@ ibkr_dashboard.html
 demo/data/
 demo/reports/
 demo/*.html
+site/
 
 # ===== Chart.js is downloaded on first run =====
 analysis/vendor/

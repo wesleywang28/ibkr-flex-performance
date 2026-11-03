@@ -1,10 +1,12 @@
 # IBKR Flex Performance
 
+**English** | [简体中文](README.zh-CN.md)
+
 Pull your Interactive Brokers account data automatically every day and turn it into an **offline HTML performance dashboard**: a correctly adjusted time-weighted return, money-weighted return, SPY/QQQ comparison, drawdowns, positions and long/short exposure, per-symbol P&L, trading-style changes and rule-based risk flags.
 
 Everything runs on your own computer through IBKR's official, read-only Flex Web Service. No trading permissions, no TWS or IB Gateway, and no data leaves your machine.
 
-**[Live demo →](https://wesleywang28.github.io/ibkr-flex-performance/)** (a fictitious, randomly generated account)
+**[Live demo →](https://wesleywang28.github.io/ibkr-flex-performance/)** · [Chinese version of the demo](https://wesleywang28.github.io/ibkr-flex-performance/zh/) (a fictitious, randomly generated account)
 
 ![Dashboard screenshot (demo data)](docs/screenshot.png)
 
@@ -19,7 +21,8 @@ IBKR's charts also lack a benchmark comparison and any analysis of the trading i
 
 ## Features
 
-- **Return chart**: adjusted TWR, IBKR as reported, SPY and QQQ on one chart, with All / 3M / 1M / YTD views and markers for deposits, withdrawals and withholdings
+- **Return chart**: adjusted TWR, IBKR as reported, SPY and QQQ on one chart, with All / 3M / 1M / YTD views and markers for deposits, withdrawals and withholdings. The line above the chart and the tooltip show the P&L amount for the selected range next to the return
+- **Daily returns calendar**: a month view with each trading day's return and P&L, monthly totals, and buttons to step back through earlier months
 - **Reconciliation**: finds temporary withholdings and withdrawals automatically and compares IBKR's daily return with the adjusted one, day by day. If your account never had a temporary withholding, the IBKR comparison lines and the withholding explanation are hidden automatically, since the two measures are then essentially the same
 - **Money-weighted return**: Modified Dietz and XIRR, plus "what if the same deposits and withdrawals had gone into SPY"
 - **Risk metrics**: max drawdown, annualized volatility, Sharpe, Sortino, beta and correlation to SPY, and tail risk estimated from the account's own daily returns
@@ -30,6 +33,7 @@ IBKR's charts also lack a benchmark comparison and any analysis of the trading i
 - **Risk flags**: concentrated positions, high leverage, open shorts and rising borrow fees, losing positions held unusually long, outsized single losses, more trading after big losing days, drawdowns, stale data, expiring token, and more (all thresholds configurable)
 - **Fees and income**: dividends, interest, withholding tax, commissions, margin interest, borrow fees
 - **Monthly snapshots**: a copy of the dashboard is kept for every month
+- **English or Chinese**: set `"language"` in `analysis/settings.json` to `"en"` or `"zh"` (or pass `--lang zh`); the page works on phones too
 
 All flags are descriptive. Nothing here is investment advice.
 
@@ -41,7 +45,7 @@ python demo/generate_demo.py
 python analysis/build_dashboard.py demo --demo
 ```
 
-Then open `demo/ibkr_dashboard.html`. On Windows you can also double-click `demo/run_demo.bat`. The demo account is entirely fictitious and randomly generated.
+Then open `demo/ibkr_dashboard.html`. On Windows you can also double-click `demo/run_demo.bat`. The demo account is entirely fictitious and randomly generated. Add `--lang zh` to the last command for the Chinese dashboard.
 
 The demo includes a temporary withholding to show the reconciliation. To see how the dashboard looks for a typical account without one, run `python demo/generate_demo.py --no-withholding` (add `--no-withdrawal` to drop the withdrawal too) before building.
 
@@ -59,7 +63,7 @@ The demo includes a temporary withholding to show the reconciliation. To see how
 2. **First pull.** Double-click `run_pull.bat` and enter the Query ID and token when prompted. The token is encrypted with Windows DPAPI and stored in `config/`; only your Windows user on this computer can decrypt it. A successful run logs something like `Success: 20251029 ~ 20261028 | days=261, ...`.
 3. **Build the dashboard.** If Python is installed, `ibkr_dashboard.html` is rebuilt automatically after every pull. You can also double-click `build_dashboard.bat` at any time.
 4. **Daily updates.** Double-click `setup_schedule.bat` to register a daily scheduled task at 07:00 local time (if the computer is off, it runs at the next opportunity). IBKR publishes the previous day's data overnight US Eastern time, so outside the US pick a later time, e.g. `setup_schedule.bat -At 19:30` in Asia or `-At 14:00` in Europe. Failures show a Windows notification. To remove the task: `setup_schedule.bat -Remove`.
-5. Optional: set `token_expiry` in `analysis/settings.json` to your token's expiry date, and adjust the risk-free rate, the transaction-tax treatment or the risk thresholds.
+5. Optional: in `analysis/settings.json`, set `language` (`"en"` or `"zh"`), set `token_expiry` to your token's expiry date, and adjust the risk-free rate, the transaction-tax treatment or the risk thresholds.
 
 When the token expires or you generate a new one, double-click `reset_token.bat` and enter it again.
 
@@ -75,9 +79,10 @@ analysis/
   risk.py                           monthly trading style, risk flags, rolling metrics
   build_dashboard.py                render the HTML and print a text summary
   template.html                     dashboard template (Chart.js is downloaded to analysis/vendor/ on first run and inlined)
-  settings.json                     risk-free rate, transaction-tax treatment, token expiry, risk thresholds
+  settings.json                     language, risk-free rate, transaction-tax treatment, token expiry, risk thresholds
 demo/                               demo data generator
-docs/FLEX_SETUP.md                  IBKR Flex Query setup guide
+docs/FLEX_SETUP.md                  IBKR Flex Query setup guide (Chinese: docs/FLEX_SETUP.zh-CN.md)
+.github/workflows/pages.yml         builds the English and Chinese demo pages and publishes them to GitHub Pages
 claude-skill/SKILL.md               optional skill template for using this with Claude
 
 Created at runtime (excluded by .gitignore, never committed):
@@ -92,6 +97,7 @@ ibkr_dashboard.html, reports/       dashboard and monthly snapshots
 
 - **Adjusted TWR**: daily return = (ending NAV − starting NAV − external cash flow) ÷ (starting NAV + that day's inflow), with inflows at the start of the day and outflows at the end, chained across days. External cash flows are deposits, withdrawals, asset transfers and temporary tax withholdings.
 - **Transaction tax** (`transactionTax` in Flex), controlled by `"transaction_tax"` in `analysis/settings.json`: `"auto"` (default) matches each refund first-in-first-out against earlier withholdings and treats matched amounts as temporary cash flows, while anything not refunded stays in P&L as a cost; `"temporary"` treats every amount as a temporary cash flow; `"cost"` treats every amount as a cost.
+- **Daily P&L and the calendar**: daily P&L = ending NAV − starting NAV − external cash flows, on the same basis as the adjusted TWR. Daily figures use official closing prices, so a trade filled after hours far from the close shows a paper gain or loss that day that reverses the next day; multi-day totals are unaffected.
 - **IBKR as reported**: the daily `twr` field from the Flex report, chained, shown for comparison. Without temporary withholdings the two should be essentially identical (they match exactly on the demo data).
 - **Starting capital**: if the account already had money before the first day in your data (an account older than the data you pulled, with no backfilled history), its NAV on that day counts as starting capital for total P&L and the money-weighted return.
 - **Money-weighted return**: Modified Dietz = total P&L ÷ time-weighted average invested capital. XIRR is the annualized internal rate of return and is inflated for periods shorter than a year.

@@ -1,5 +1,7 @@
 # IBKR Flex Query setup
 
+**English** | [简体中文](FLEX_SETUP.zh-CN.md)
+
 You only need to do this once; it takes about 10 minutes. Labels below follow the English IBKR web portal (Client Portal).
 
 ## 1. Create an Activity Flex Query
@@ -61,7 +63,7 @@ On the same page, click the gear icon of **Flex Web Service Configuration**:
 2. Click **Generate New Token**. The page shows the **current token** and its validity period
 3. Optional: restrict access to your own IP address
 
-Write down two things: the **Query ID** and the **token**. The token works like a read-only password: **don't share it, don't post screenshots of it, and never commit it to Git**.
+Write down two things: the **Query ID** and the **token**. The token works like a read-only password: **don't share it, don't post screenshots of it, and never commit it to Git**. Generating a new token immediately invalidates the old one.
 
 Put the token's expiry date into `token_expiry` in `analysis/settings.json` (for example `"2027-06-30"`), and the dashboard will remind you 30 days before it expires.
 

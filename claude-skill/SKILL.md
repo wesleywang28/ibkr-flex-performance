@@ -34,3 +34,5 @@ Key files: `data/pull_log.txt` (pull log), `data/latest.xml`, `data/raw/`, `data
 - Withdrawals don't affect the TWR. Simple "NAV ÷ total deposits" returns drop after a withdrawal; that is not an investment loss.
 - If transaction tax has not been refunded (the "Transaction tax counted as a cost" flag), point it out: it may be a temporary withholding that will be refunded later (the return is corrected automatically when the refund appears) or a real cost such as stamp duty.
 - To make the risk flags more or less sensitive, edit `thresholds` in `analysis/settings.json` and run step 2 again.
+- The dashboard and the printed summary follow `"language"` in `analysis/settings.json` (`"en"` or `"zh"`); add `--lang zh` or `--lang en` to the build command to override it once. Reply in the language the user writes in.
+- The daily returns calendar and the P&L shown next to the return chart use the same basis as the adjusted TWR. A trade filled after hours far from the official close shows a paper gain or loss that day that reverses the next day; explain this if the user asks about an odd single-day number.

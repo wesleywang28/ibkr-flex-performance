@@ -78,16 +78,19 @@ details summary{cursor:pointer;color:var(--ink);font-weight:600}
 details li{margin:4px 0}
 details.fold{border:none;border-radius:0;padding:0;background:none;margin-top:12px}
 details.fold>summary{font-weight:500;color:var(--muted);font-size:12.5px;margin-bottom:6px}
-.comp{margin:4px 0 14px}.comp .t{font-size:12.5px;color:var(--muted);margin-bottom:6px}
-.comp .r{display:flex;align-items:center;gap:8px;margin:4px 0;font-size:12.5px}
-.comp .r .k{width:64px;flex:none;color:var(--muted)}.comp .r .v{width:52px;flex:none;text-align:right;font-variant-numeric:tabular-nums}
-.comp .bar{flex:1;display:flex;height:18px;background:#f1f2f5;border-radius:5px;overflow:hidden;min-width:0}
-.comp .bar span{display:block;height:100%}
-.comp .lg{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--muted);margin-top:6px}
+.comp{margin:2px 0 14px}.comp .t{font-size:12.5px;color:var(--muted);margin-bottom:6px}
+.comp .r{display:flex;align-items:center;gap:10px;margin:5px 0;font-size:12.5px}
+.comp .r .k{width:42px;flex:none;color:var(--muted)}.comp .r .v{width:150px;flex:none;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.comp .bar{flex:1;position:relative;display:flex;gap:2px;height:20px;background:#f1f2f5;border-radius:5px;overflow:hidden;min-width:0}
+.comp .bar span{display:block;height:100%}.comp .bar .nav{position:absolute;top:0;bottom:0;width:0;border-left:2px dashed #1b2232;opacity:.45}
+.comp .lg{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12px;color:var(--muted);margin-top:7px}
 .comp .lg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.comp .st{font-size:12.5px;color:var(--muted);margin-top:6px}.comp .st b{color:var(--ink);font-variant-numeric:tabular-nums}
+#tPos td{vertical-align:middle}#tPos .nm{font-size:11.5px;color:var(--muted);max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#tPos .w{font-size:11.5px;color:var(--muted)}#tPos .mb{display:inline-block;width:38px;height:4px;background:#eceef2;border-radius:2px;margin-left:5px;vertical-align:2px;overflow:hidden}#tPos .mb i{display:block;height:100%;background:#9aa3b5}
 @media(max-width:600px){.wrap{padding:16px 10px 40px}.card{padding:14px 12px}.kpi .val{font-size:20px}th,td{padding:6px 7px}
 .cal .c{padding:4px 5px;min-height:54px}.cal .c .r{font-size:12.5px}.cal .c .p{font-size:11px}}
-@media(max-width:600px){#tPos th:nth-child(2),#tPos td:nth-child(2){display:none}}
+@media(max-width:600px){.comp .r .v{width:112px}#tPos .nm{max-width:130px}}
 </style>
 </head>
 <body>
@@ -160,8 +163,16 @@ const LANGS = {
     comp: 'Composition (% of NAV)', compLong: 'Long', compShort: 'Short', compCls: {stk: 'Stocks', etf: 'ETFs', opt: 'Options', oth: 'Other'},
     compOpt: 'Options are shown at their market value (premium), which understates the exposure they carry.',
     evDetails: 'Event details', altLang: '中文',
-    pos: 'Open positions', asOf: e => `As of ${e}`, chips: ['Long value', 'Short value', 'Cash', 'Gross exposure / NAV', 'Net exposure / NAV'],
-    posCols: ['Symbol', 'Description', 'Side', 'Quantity', 'Avg cost', 'Price', 'Value', '% of NAV', 'Unrealized P&L', 'Return'], long: 'Long', short: 'Short', noPos: 'No open positions',
+    compNav: 'dashed line = 100% of NAV', compCash: (c, neg, g, n) => `Cash <b class="${neg ? 'neg' : ''}">${c}</b>${neg ? ' (margin loan)' : ''} · gross exposure <b>${g}</b> · net exposure <b>${n}</b>`,
+    pos: 'Open positions', asOf: e => `As of ${e}`,
+    posCols: ['Symbol', 'Qty', 'Avg cost (IBKR)', 'Break-even', 'Price', 'Value / % of NAV', "Today's P&L", 'Unrealized P&L', 'Round P&L', 'Return', 'Held'], long: 'Long', short: 'Short', noPos: 'No open positions',
+    held: (n, min) => n == null ? '—' : (n === 0 ? 'today' : `${min ? '≥' : ''}${n}d`),
+    dilItem: (sym, side, d, n, real, div) => `${sym} ${side}: this round since ${d}, ${n} fill${n === 1 ? '' : 's'}, realized ${real}${div ? `, dividends ${div}` : ''}`,
+    dilList: items => `Trading in and out: ${items.join('; ')}.`,
+    dilNA: ' "—": the shares don\'t reconcile with the trade history (for example after a split or a transfer in), so no break-even price is shown.',
+    dilSeed: ' "*" and "≥": the position was already open on the first day of your data, so its break-even price starts from IBKR\'s cost on that day and days held count from then.',
+    posHow: "How the break-even price, today's P&L and days held are calculated",
+    posHowText: 'The break-even price works like the "diluted cost" shown by Chinese brokers: counting from the last time the position was flat, the realized P&L from trading in and out of it and the dividends received (after tax) are folded into the cost. For a short it is the effective short price, so the round is in profit while the price is below it. Round P&L = unrealized P&L + this round\'s realized P&L + dividends, the result of the current round; the account\'s total P&L and returns are unchanged. Today\'s P&L is the symbol\'s mark-to-market P&L for the latest day at the official close, including that day\'s trades and commissions. Days held are calendar days since the round started.',
     expo: 'Daily long / short exposure and gross leverage', longV: 'Long value', shortV: 'Short value', grossL: 'Gross exposure / NAV',
     sym: 'P&L by symbol', symHint: 'Realized + unrealized + net dividends', symD: 'Symbol details',
     symCols: ['Symbol', 'Realized', 'Unrealized', 'Net dividends', 'Total', 'Executions', 'Traded value', 'Commissions'],
@@ -185,7 +196,8 @@ const LANGS = {
       `<b>Daily P&amp;L and the calendar</b>: daily P&amp;L = ending NAV − starting NAV − external cash flows, on the same basis as the adjusted TWR. Daily figures use official closing prices, so a trade filled after hours far from the close shows a paper gain or loss that day and reverses the next day; the cumulative total is unaffected.`,
       `<b>Benchmarks</b>: SPY and QQQ use dividend-adjusted closes, rebased to the account's start date. "Same cash flows in SPY" buys SPY on each deposit date and sells on each withdrawal date.`,
       `<b>Risk metrics</b>: volatility, Sharpe (risk-free rate ${rf}) and beta use only days after the account exceeded $5,000, to avoid noise from tiny early balances; annualized figures are unstable with less than a year of data.`,
-      `<b>P&amp;L by symbol</b>: FIFO realized + current unrealized + net dividends (after withholding tax); options are grouped under their underlying.`],
+      `<b>P&amp;L by symbol</b>: FIFO realized + current unrealized + net dividends (after withholding tax); options are grouped under their underlying.`,
+      `<b>Break-even price</b> (stocks and ETFs): each symbol is tracked in rounds, from the position leaving 0 until it is flat again. Long: (bought − sold + commissions − net dividends) ÷ shares held; short: (sold − bought back − commissions − dividends paid) ÷ shares short. A fill that flips long to short (or back) is split; dividends belong to the round open at the ex-date. IBKR's average cost is the FIFO cost of the remaining lots, so gains from trading in and out don't lower it; both give the same total P&amp;L.`],
     data: (n) => `Data: IBKR Flex Web Service (${n} report file${n === 1 ? '' : 's'}, merged and de-duplicated); benchmark prices from Yahoo Finance.`,
     footer: 'Generated locally from your own data for personal review. Not investment advice.',
   },
@@ -237,8 +249,16 @@ const LANGS = {
     comp: '资产构成（占净值）', compLong: '多头', compShort: '空头', compCls: {stk: '个股', etf: 'ETF', opt: '期权', oth: '其他'},
     compOpt: '期权按市值（权利金）计算，会低估它实际带来的敞口。',
     evDetails: '事件明细', altLang: 'English',
-    pos: '当前持仓', asOf: e => `截至 ${e}`, chips: ['多头市值', '空头市值', '现金', '总敞口 / 净值', '净敞口 / 净值'],
-    posCols: ['标的', '名称', '方向', '数量', '成本价', '现价', '市值', '占净值', '未实现盈亏', '收益率'], long: '多', short: '空', noPos: '目前没有持仓',
+    compNav: '虚线 = 100% 净值', compCash: (c, neg, g, n) => `现金 <b class="${neg ? 'neg' : ''}">${c}</b>${neg ? '（融资）' : ''} · 总敞口 <b>${g}</b> · 净敞口 <b>${n}</b>`,
+    pos: '当前持仓', asOf: e => `截至 ${e}`,
+    posCols: ['标的', '数量', '成本价（IBKR）', '摊薄成本', '现价', '市值 / 占净值', '当日盈亏', '未实现盈亏', '摊薄盈亏', '收益率', '持有'], long: '多', short: '空', noPos: '目前没有持仓',
+    held: (n, min) => n == null ? '—' : (n === 0 ? '今天' : `${min ? '≥' : ''}${n} 天`),
+    dilItem: (sym, side, d, n, real, div) => `${sym} ${side} 本轮自 ${d} 起 ${n} 笔成交，已实现 ${real}${div ? `，分红 ${div}` : ''}`,
+    dilList: items => `做 T：${items.join('；')}。`,
+    dilNA: ' 标“—”的持仓股数和成交记录对不上（例如拆股或持仓转入），暂不计算摊薄成本。',
+    dilSeed: ' 标“*”和“≥”的持仓在数据第一天之前就已持有，摊薄成本从那天 IBKR 的成本价算起，持有天数也从那天算起。',
+    posHow: '摊薄成本、当日盈亏和持有天数怎么算',
+    posHowText: '摊薄成本和 A 股券商的“摊薄成本价”一样：从上次清仓后开始算，把这一轮做 T 的已实现盈亏和分红（扣税后）摊进成本。空头的摊薄成本是摊薄后的卖出价，现价低于它就是赚的。摊薄盈亏 = 未实现盈亏 + 本轮已实现 + 本轮分红，是这一轮持仓的整体盈亏；账户总盈亏和收益率不受影响。当日盈亏是最新交易日这个标的按收盘价计算的盈亏（含当天的买卖和佣金）。持有天数从这一轮第一次开仓算起（自然日）。',
     expo: '每日多空敞口与总杠杆', longV: '多头市值', shortV: '空头市值', grossL: '总敞口 / 净值',
     sym: '个股盈亏贡献', symHint: '已实现 + 未实现 + 分红净额', symD: '个股明细',
     symCols: ['标的', '已实现', '未实现', '分红净额', '合计', '成交笔数', '成交额', '佣金'],
@@ -264,7 +284,8 @@ const LANGS = {
       `<b>每日盈亏与日历</b>：当日盈亏 = 期末净值 − 期初净值 − 外部现金流，与调整后 TWR 口径一致。每日数字按官方收盘价计价，盘后成交价和收盘价相差很大时，当天会出现账面盈亏、次日回吐，跨天累计不受影响。`,
       `<b>基准</b>：SPY、QQQ 使用含分红再投资的调整收盘价，起点与账户对齐。"同样的出入金买 SPY"是把每笔入金当天买入、提现当天卖出后的模拟净值。`,
       `<b>风险指标</b>：波动率、夏普（假设无风险利率 ${rf}）、β 只用账户资金超过 $5,000 以后的交易日计算，避免开户初期小额资金的噪声；样本少于一年时年化数字波动较大。`,
-      `<b>个股盈亏</b>按 FIFO 已实现 + 当前未实现 + 分红净额（含预扣税），期权归入对应正股。`],
+      `<b>个股盈亏</b>按 FIFO 已实现 + 当前未实现 + 分红净额（含预扣税），期权归入对应正股。`,
+      `<b>摊薄成本</b>（股票和 ETF）：每个标的从仓位为 0 开始到再次回到 0 算一轮。多头 = (本轮买入总额 − 卖出总额 + 佣金 − 分红净额) ÷ 当前股数；空头 = (本轮卖出总额 − 买回总额 − 佣金 − 支付的分红) ÷ 当前空头股数。一笔成交直接从多翻空（或反过来）时按数量拆开；分红按除权日归属。IBKR 的成本价是剩余各批的 FIFO 平均成本，做 T 赚的钱记在已实现盈亏里，不会降低成本；两种口径的总盈亏相同。`],
     data: (n) => `数据来源：IBKR Flex Web Service（${n} 份报表合并去重），基准行情来自 Yahoo Finance。`,
     footer: '本页面由本地数据自动生成，仅用于个人复盘，不构成投资建议。',
   },
@@ -374,11 +395,9 @@ document.getElementById('app').innerHTML = `
 
 <section class="card">
   <h2>${L.pos} <span class="hint">${L.asOf(M.end)}</span></h2>
-  <div class="chips">
-    ${[money(K.long_mv), money(K.short_mv), money(K.cash), (grossExpo / K.nav).toFixed(2) + '×', pct((K.long_mv + K.short_mv) / K.nav, 1)].map((v, i) => `<div class="chip"><div class="lab">${L.chips[i]}</div><div class="val">${v}</div></div>`).join('')}
-  </div>
   <div class="comp" id="comp"></div>
   <div class="scroll"><table id="tPos"></table></div>
+  <div class="sub" id="posNote" style="margin-top:8px;line-height:1.6"></div>
   <div class="sub" style="margin:14px 0 6px">${L.expo}</div>
   <div class="chart sm"><canvas id="cExpo"></canvas></div>
 </section>
@@ -457,26 +476,46 @@ document.getElementById('app').innerHTML = `
   h += `<tr style="font-weight:650"><td class="l">${MC.total}</td>${cols.map(c => `<td>${pct(prod(c[0]))}</td>`).join('')}${has('SPY') ? `<td class="${cls(prod('account') - prod('SPY'))}">${pp(prod('account') - prod('SPY'))}</td>` : ''}</tr>`;
   document.getElementById('tMon').innerHTML = h;
 
-  document.getElementById('tPos').innerHTML = `<tr>${L.posCols.map((c, j) => `<th${j < 3 ? ' class="l"' : ''}>${c}</th>`).join('')}</tr>` +
-    (D.positions.length ? D.positions.map(p => `<tr><td class="l"><b>${p.symbol}</b></td><td class="l dim">${(p.desc || '').slice(0, 28)}</td><td class="l"><span class="tag ${p.qty > 0 ? 't-in' : 't-out'}">${p.qty > 0 ? L.long : L.short}</span></td><td>${p.qty.toLocaleString()}</td><td>${num(p.avg)}</td><td>${num(p.mark)}</td><td>${money(p.value)}</td><td>${pct(p.value / K.nav, 1, false)}</td><td class="${cls(p.upnl)}">${money(p.upnl, 0, true)}</td><td class="${cls(p.upnl)}">${pct(p.upnl / Math.abs(p.cost || 1), 1)}</td></tr>`).join('')
-      : `<tr><td class="l dim" colspan="10">${L.noPos}</td></tr>`);
+  const px = v => v == null ? '—' : v.toFixed(Math.abs(v) < 10 ? 3 : 2);
+  const dilDiff = p => p.dil_cost != null && Math.abs((p.round_real || 0) + (p.round_div || 0)) >= 1;
+  const maxW = Math.max(...D.positions.map(p => Math.abs(p.value) / K.nav), 0.0001);
+  document.getElementById('tPos').innerHTML = `<tr>${L.posCols.map((c, j) => `<th${j ? '' : ' class="l"'}>${c}</th>`).join('')}</tr>` +
+    (D.positions.length ? D.positions.map(p => { const w = Math.abs(p.value) / K.nav; return `<tr>` +
+      `<td class="l"><b>${p.symbol}</b> <span class="tag ${p.qty > 0 ? 't-in' : 't-out'}">${p.qty > 0 ? L.long : L.short}</span><div class="nm" title="${p.desc || ''}">${p.desc || ''}</div></td>` +
+      `<td>${p.qty.toLocaleString()}</td><td>${px(p.avg)}</td>` +
+      `<td${dilDiff(p) ? ' style="font-weight:650"' : ' class="dim"'}>${px(p.dil_cost)}${p.round_seed && p.dil_cost != null ? '*' : ''}</td><td>${px(p.mark)}</td>` +
+      `<td>${money(p.value)}<div class="w">${pct(w, 1, false)}<span class="mb"><i style="width:${w / maxW * 100}%"></i></span></div></td>` +
+      `<td class="${p.day_pnl == null ? 'dim' : cls(p.day_pnl)}">${p.day_pnl == null ? '—' : money(p.day_pnl, 0, true)}</td>` +
+      `<td class="${cls(p.upnl)}">${money(p.upnl, 0, true)}</td>` +
+      `<td class="${p.dil_pnl == null ? 'dim' : cls(p.dil_pnl)}"${dilDiff(p) ? ' style="font-weight:650"' : ''}>${p.dil_pnl == null ? '—' : money(p.dil_pnl, 0, true)}</td>` +
+      `<td class="${cls(p.upnl)}">${pct(p.upnl / Math.abs(p.cost || 1), 1)}</td><td class="dim">${L.held(p.held, p.held_min)}</td></tr>`; }).join('')
+      : `<tr><td class="l dim" colspan="11">${L.noPos}</td></tr>`);
+  const dl = D.positions.filter(dilDiff);
+  document.getElementById('posNote').innerHTML = !D.positions.length ? '' :
+    (dl.length ? L.dilList(dl.map(p => L.dilItem(p.symbol, p.qty > 0 ? L.long : L.short, md(p.round_start), p.round_n,
+      `<span class="${cls(p.round_real)}">${money(p.round_real, 0, true)}</span>`, Math.abs(p.round_div || 0) >= 1 ? `<span class="${cls(p.round_div)}">${money(p.round_div, 0, true)}</span>` : ''))) : '') +
+    (D.positions.some(p => p.cat === 'STK' && p.dil_cost == null) ? L.dilNA : '') +
+    (D.positions.some(p => p.round_seed) ? L.dilSeed : '') +
+    `<details class="fold" style="margin-top:6px"><summary>${L.posHow}</summary>${L.posHowText}</details>`;
 
   (function () {   // composition: long and short market value by asset class, as % of NAV
     const el = document.getElementById('comp');
+    if (!K.nav) { el.style.display = 'none'; return; }
     const ps = D.positions.filter(p => p.value);
-    if (!ps.length || !K.nav) { el.style.display = 'none'; return; }
     const keyOf = p => p.cat === 'STK' ? (p.sub === 'ETF' ? 'etf' : 'stk') : (p.cat === 'OPT' ? 'opt' : 'oth');
-    const col = {stk: '#1f5eff', etf: '#7c4dff', opt: '#e8a317', oth: '#9aa3b5'};
+    const col = {stk: '#2563eb', etf: '#f59e0b', opt: '#8b5cf6', oth: '#94a3b8'};
     const order = ['stk', 'etf', 'opt', 'oth'];
     const sum = side => { const o = {}; ps.forEach(p => { if (side * p.value > 0) { const k = keyOf(p); o[k] = (o[k] || 0) + Math.abs(p.value) / K.nav; } }); return o; };
     const L1 = sum(1), S1 = sum(-1);
     const tot = o => Object.values(o).reduce((a, b) => a + b, 0);
     const scale = Math.max(1, tot(L1), tot(S1));
-    const row = (lab, o) => tot(o) ? `<div class="r"><span class="k">${lab}</span><div class="bar">${order.filter(k => o[k]).map(k => `<span title="${L.compCls[k]} ${pct(o[k], 1, false)}" style="width:${o[k] / scale * 100}%;background:${col[k]}"></span>`).join('')}</div><span class="v">${pct(tot(o), 0, false)}</span></div>` : '';
+    const mark = scale > 1.02 ? `<span class="nav" style="left:${100 / scale}%" title="100%"></span>` : '';
+    const row = (lab, o, mv) => `<div class="r"><span class="k">${lab}</span><div class="bar">${order.filter(k => o[k]).map(k => `<span title="${L.compCls[k]} ${pct(o[k], 1, false)}" style="width:${o[k] / scale * 100}%;background:${col[k]}"></span>`).join('')}${mark}</div><span class="v">${money(Math.abs(mv))} · ${pct(tot(o), 0, false)}</span></div>`;
     const used = order.filter(k => L1[k] || S1[k]);
     const lg = used.map(k => `<span><i style="background:${col[k]}"></i>${L.compCls[k]} ${[L1[k] ? `${L.compLong} ${pct(L1[k], 0, false)}` : '', S1[k] ? `${L.compShort} ${pct(S1[k], 0, false)}` : ''].filter(Boolean).join(' · ')}</span>`).join('');
-    el.innerHTML = `<div class="t">${L.comp}</div>${row(L.compLong, L1)}${row(L.compShort, S1)}<div class="lg">${lg}</div>` +
-      (used.includes('opt') ? `<div class="lg">${L.compOpt}</div>` : '');
+    el.innerHTML = `<div class="t">${L.comp}</div>${row(L.compLong, L1, K.long_mv)}${row(L.compShort, S1, K.short_mv)}<div class="lg">${lg}${mark ? `<span>${L.compNav}</span>` : ''}</div>` +
+      (used.includes('opt') ? `<div class="lg">${L.compOpt}</div>` : '') +
+      `<div class="st">${L.compCash(money(K.cash), K.cash < 0, (grossExpo / K.nav).toFixed(2) + '×', pct((K.long_mv + K.short_mv) / K.nav, 0))}</div>`;
   })();
 
   document.getElementById('tSym').innerHTML = `<tr>${L.symCols.map((c, j) => `<th${j ? '' : ' class="l"'}>${c}</th>`).join('')}</tr>` +
@@ -688,8 +727,8 @@ document.querySelectorAll('#rng button').forEach(b => b.onclick = () => {
   const rows = D.style_rows || [], ch = D.style_changes || [];
   if (rows.length < 2) { document.getElementById('styleCard').style.display = 'none'; }
   else {
-    const last = rows[rows.length - 1];
-    document.getElementById('styleHint').textContent = L.styleHint(last.month, rows[0].month, rows[rows.length - 2].month) + (D.style_note ? ' · ' + D.style_note : '');
+    const last = D.style_cmp || {month: rows[rows.length - 1].month, base_from: rows[0].month, base_to: rows[rows.length - 2].month};
+    document.getElementById('styleHint').textContent = L.styleHint(last.month, last.base_from, last.base_to) + (D.style_note ? ' · ' + D.style_note : '');
     document.getElementById('tChg').innerHTML = `<tr><th class="l">${L.styleCols[0]}</th><th>${last.month}</th><th>${L.styleCols[1]}</th><th>${L.styleCols[2]}</th></tr>` +
       ch.map(c => `<tr class="${c.big ? 'big' : ''}"><td class="l">${c.name}</td><td><b>${c.latest}</b></td><td class="dim">${c.base}</td><td>${c.delta}</td></tr>`).join('');
     const x = v => v == null ? '—' : v.toFixed(2) + '×';

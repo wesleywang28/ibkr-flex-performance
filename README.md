@@ -26,7 +26,8 @@ IBKR's charts also lack a benchmark comparison and any analysis of the trading i
 - **Reconciliation**: finds temporary withholdings and withdrawals automatically and compares IBKR's daily return with the adjusted one, day by day. If your account never had a temporary withholding, the IBKR comparison lines and the withholding explanation are hidden automatically, since the two measures are then essentially the same
 - **Money-weighted return**: Modified Dietz and XIRR, plus "what if the same deposits and withdrawals had gone into SPY"
 - **Risk metrics**: max drawdown, annualized volatility, Sharpe, Sortino, beta and correlation to SPY, and tail risk estimated from the account's own daily returns
-- **Positions**: open positions, long/short value, and daily long/short exposure with gross leverage
+- **Positions**: open positions with today's P&L and days held, a long/short composition bar (stocks / ETFs / options as a share of NAV), and daily long/short exposure with gross leverage
+- **Break-even price**: the "diluted cost" Chinese brokers show. When you trade in and out of a position, the realized P&L (and dividends) of the current round are folded into its cost, so a successful trade lowers the break-even of a long (or raises the effective price of a short) instead of only showing up as realized P&L. Shown next to IBKR's average cost, for longs and shorts
 - **P&L by symbol**: realized, unrealized and net dividends per symbol (options grouped under their underlying)
 - **Trade analysis**: win rate, payoff ratio, profit factor, long vs. short P&L, FIFO holding periods, intraday share, turnover, largest winning and losing closes
 - **Trading-style changes**: month-by-month execution frequency, holding period, short share, payoff ratio, exposure and concentration, with notable changes in the latest month highlighted
@@ -45,7 +46,7 @@ python demo/generate_demo.py
 python analysis/build_dashboard.py demo --demo
 ```
 
-Then open `demo/ibkr_dashboard.html`. On Windows you can also double-click `demo/run_demo.bat`. The demo account is entirely fictitious and randomly generated. Add `--lang zh` to the last command for the Chinese dashboard.
+Then open `demo/ibkr_dashboard.html`. On Windows you can also double-click `demo/run_demo.bat`. The demo account is entirely fictitious and randomly generated. Add `--lang zh` to the last command for the Chinese dashboard. To run the tests: `python -m unittest discover -s tests`.
 
 The demo includes a temporary withholding to show the reconciliation. To see how the dashboard looks for a typical account without one, run `python demo/generate_demo.py --no-withholding` (add `--no-withdrawal` to drop the withdrawal too) before building.
 
@@ -84,6 +85,7 @@ demo/                               demo data generator
 docs/FLEX_SETUP.md                  IBKR Flex Query setup guide (Chinese: docs/FLEX_SETUP.zh-CN.md)
 .github/workflows/pages.yml         builds the English and Chinese demo pages and publishes them to GitHub Pages
 claude-skill/SKILL.md               optional skill template for using this with Claude
+tests/                              unit tests on hand-made cases and end-to-end checks on the demo account
 
 Created at runtime (excluded by .gitignore, never committed):
 config/                             encrypted token
@@ -104,6 +106,7 @@ ibkr_dashboard.html, reports/       dashboard and monthly snapshots
 - **Benchmarks**: SPY and QQQ dividend-adjusted closes, rebased to the account's start date.
 - **Risk metrics**: computed only on days after the account exceeded $5,000; risk-free rate 4% by default. Rolling 63-day metrics appear once there are 252 trading days of data.
 - **P&L by symbol**: FIFO realized + current unrealized + net dividends (after withholding tax).
+- **Break-even price** (stocks and ETFs): each symbol is tracked in rounds, from the position leaving 0 until it is flat again; after a full close the next trade starts a new round. Long: (bought − sold + commissions − net dividends) ÷ shares held. Short: (sold − bought back − commissions − dividends paid) ÷ shares short, i.e. the effective short price. A fill that flips a long into a short (or back) is split pro rata. Dividends belong to the round that was open at the ex-date. Round P&L = unrealized P&L + the round's realized P&L + dividends, so it always reconciles with IBKR's numbers; only the presentation changes, not total P&L or returns. Positions already open before the first day of your data start from IBKR's cost on that day (marked "*"). Options keep IBKR's cost.
 - **Currencies**: everything is shown in the account's base currency; trades and positions in other currencies are converted with IBKR's `fxRateToBase`.
 
 ## Risk flag rules

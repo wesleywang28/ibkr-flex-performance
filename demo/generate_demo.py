@@ -14,7 +14,7 @@ Output:
 The account, prices and trades are randomly generated (fixed seed) and have nothing to do with any real
 account or real market data. The demo deliberately includes several deposits, one withdrawal, a temporary
 tax withholding that is later refunded, dividends with withholding tax, borrow fees, long and short trades,
-and intraday trades.
+intraday trades, and trading in and out of open longs and shorts (to show the break-even price).
 """
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ import pandas as pd
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "data")
 rng = np.random.default_rng(20250301)
+rng_t = np.random.default_rng(3)    # separate stream for trading around positions, so the rest of the demo stays stable
 
 DAYS = pd.bdate_range("2025-03-03", "2025-12-30")
 ACCOUNT = "U1234567"
@@ -143,7 +144,7 @@ def main():
                 cash_tx.append(dict(type="Dividends", amount=div, symbol=s, description=f"{s} CASH DIVIDEND USD 0.35 PER SHARE (Ordinary Dividend)"))
                 cash_tx.append(dict(type="Withholding Tax", amount=wh, symbol=s, description=f"{s} CASH DIVIDEND USD 0.35 PER SHARE - US TAX"))
 
-        def trade(sym, q, price, oc, t):
+        def trade(sym, q, price, oc, t, frac=1.0):
             nonlocal cash, tid
             comm = -max(1.0, abs(q) * 0.005)
             cash += -q * price + comm
@@ -153,9 +154,9 @@ def main():
             m["comm"] += comm
             tid += 1
             realized = 0.0
-            if oc == "C":
+            if oc == "C":                     # frac < 1: closing part of the position (average cost)
                 p = pos[sym]
-                realized = p["q"] * price - abs(comm) - p["cost"]
+                realized = frac * (p["q"] * price - p["cost"]) - abs(comm)
             trades.append(dict(symbol=sym, q=q, price=price, comm=comm, oc=oc, t=t, realized=realized, tid=tid))
             return comm
 
@@ -167,6 +168,30 @@ def main():
                 price = round(close[sym] * (1 + rng.normal(0, 0.006)), 2)
                 trade(sym, -p["q"], price, "C", f"{rng.integers(10, 16):02d}{rng.integers(0, 60):02d}{rng.integers(0, 60):02d}")
                 del pos[sym]
+
+        # ---- trading around a position: sell part of a long high and buy it back lower (cover part of a
+        #      short low and re-short higher); most round trips work, some don't ----
+        for sym in list(pos):
+            p = pos[sym]
+            if p["open_day"] == day or abs(p["q"]) < 3 or rng_t.random() > 0.18:
+                continue
+            k = max(1, int(abs(p["q"]) * rng_t.uniform(0.25, 0.5)))
+            hi = round(close[sym] * (1 + abs(rng_t.normal(0.007, 0.004))), 2)
+            lo = round(close[sym] * (1 - abs(rng_t.normal(0.007, 0.004))), 2)
+            sell_px, buy_px = (hi, lo) if rng_t.random() < 0.7 else (lo, hi)
+            t1 = f"{rng_t.integers(10, 12):02d}{rng_t.integers(0, 60):02d}{rng_t.integers(0, 60):02d}"
+            t2 = f"{rng_t.integers(13, 15):02d}{rng_t.integers(0, 60):02d}{rng_t.integers(0, 60):02d}"
+            frac = k / abs(p["q"])
+            if p["q"] > 0:
+                trade(sym, -k, sell_px, "C", t1, frac)
+                p["cost"] -= p["cost"] * frac; p["q"] -= k
+                c2 = trade(sym, k, buy_px, "O", t2)
+                p["cost"] += k * buy_px + abs(c2); p["q"] += k
+            else:
+                trade(sym, k, buy_px, "C", t1, frac)
+                p["cost"] -= p["cost"] * frac; p["q"] += k
+                c2 = trade(sym, -k, sell_px, "O", t2)
+                p["cost"] += -k * sell_px + abs(c2); p["q"] -= k
 
         # ---- opens (no trading on day one) ----
         nav_now = cash + sum(p["q"] * close[s] for s, p in pos.items())

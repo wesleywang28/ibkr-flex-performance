@@ -25,7 +25,10 @@ import pandas as pd
 
 # ---------------- settings ----------------
 _SETTINGS_FP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
-SETTINGS = json.load(open(_SETTINGS_FP, encoding="utf-8")) if os.path.exists(_SETTINGS_FP) else {}
+SETTINGS = {}
+if os.path.exists(_SETTINGS_FP):
+    with open(_SETTINGS_FP, encoding="utf-8") as _fh:
+        SETTINGS = json.load(_fh)
 RISK_FREE = float(SETTINGS.get("risk_free", 0.04))   # annual risk-free rate used for Sharpe / Sortino
 MIN_CAPITAL = 100.0       # days with less capital than this are ignored (e.g. a $1 test deposit)
 EXTERNAL_FLOW_FIELDS = [  # ChangeInNAV fields treated as external cash flows
@@ -183,6 +186,84 @@ def xirr(flows: list[tuple[pd.Timestamp, float]]) -> float | None:
     return (lo + hi) / 2
 
 
+DIV_TYPES = ("Dividends", "Payment In Lieu Of Dividends", "Withholding Tax")
+
+
+def diluted_rounds(events: list[tuple]) -> dict:
+    """Break-even price per stock/ETF position (the "diluted cost" shown by Chinese brokers).
+
+    events: (time, kind, symbol, quantity, cash_out, realized)
+        kind  -1 = position already open when the data starts (seeded at IBKR's cost on that day)
+               0 = dividend / withholding tax (quantity 0; cash_out < 0 when cash is received)
+               1 = execution
+        cash_out: positive when buying (incl. commission), negative when selling (net proceeds)
+    Each symbol is tracked in "rounds": a round starts when the position leaves 0 and ends when it
+    returns to 0; after a full close the next trade starts a new round. Long and short are symmetric:
+        long   break-even = (bought − sold + fees − net dividends) / shares held
+        short  break-even = (sold − bought back − fees − dividends paid) / shares short,
+               i.e. the effective short price; the round is in profit while the price is below it
+    A single fill that flips the position (long to short or back) is split pro rata: the first part
+    closes the old round, the rest opens a new one. Dividends belong to the round that was open at
+    the start of the ex-date (executions on the ex-date sort after the dividend).
+    Returns {symbol: dict(qty, net, real, div, start, n, seed)} for rounds that are still open.
+    """
+    book = {}
+    for dt, kind, sym, q, out, real in sorted(events, key=lambda e: (pd.Timestamp(e[0]), e[1])):
+        b = book.get(sym)
+        if kind == 0:                                   # dividend: only for the round open on the ex-date
+            if b and abs(b["qty"]) > 1e-9:
+                b["net"] += out
+                b["div"] -= out
+            continue
+        if b is None or abs(b["qty"]) < 1e-9:           # new round
+            b = book[sym] = dict(qty=0.0, net=0.0, real=0.0, div=0.0, start=dt, n=0, seed=kind < 0)
+        elif (b["qty"] + q) * b["qty"] < -1e-9:         # flip: close the old round, open a new one
+            keep = 1 - (-b["qty"] / q)                  # share of the fill that opens the new position
+            b = book[sym] = dict(qty=0.0, net=0.0, real=0.0, div=0.0, start=dt, n=0, seed=False)
+            q, out, real = q * keep, out * keep, 0.0    # the realized P&L of this fill belongs to the old round
+        b["qty"] += q
+        b["net"] += out
+        b["real"] += real
+        b["n"] += kind > 0
+    return {s: b for s, b in book.items() if abs(b["qty"]) > 1e-9}
+
+
+def diluted_events(tdf: pd.DataFrame, cash: list[dict], days: dict | None = None) -> list[tuple]:
+    """Build the events for diluted_rounds from stock/ETF executions, dividends and, if the account
+    already held positions when the data starts, those starting positions. Options are not included.
+    Amounts stay in each instrument's own currency."""
+    ev = []
+    stk = tdf[tdf["assetCategory"] == "STK"] if not tdf.empty else tdf
+    for _, t in stk.iterrows():
+        # overnight fills (after 20:00 ET) carry the next trade date; never sort them before it
+        ts = max(pd.Timestamp(t["dt"]), d8(t["tradeDate"])) if t.get("tradeDate") else pd.Timestamp(t["dt"])
+        ev.append((ts, 1, t["symbol"], t["quantity"], -f(t.get("netCash")), t["fifoPnlRealized"]))
+    if days:                                            # positions held before the first statement in the data
+        # Work back from the end of the first day: opening fills added their cash to the cost basis and
+        # closing fills removed (cash + realized P&L), so  cost at the open = cost at the close − Σ(cash_out + realized).
+        first = min(days)
+        end_q, end_cost = defaultdict(float), defaultdict(float)
+        for p in days[first].iter("OpenPosition"):
+            if p.get("assetCategory") == "STK":
+                end_q[p.get("symbol")] += f(p.get("position"))
+                end_cost[p.get("symbol")] += f(p.get("costBasisMoney"))
+        day1 = stk[stk["tradeDate"] == first] if len(stk) else stk
+        for sym in set(end_q) | set(day1["symbol"] if len(day1) else []):
+            t1 = day1[day1["symbol"] == sym] if len(day1) else day1
+            q0 = end_q[sym] - (float(t1["quantity"].sum()) if len(t1) else 0.0)
+            if abs(q0) > 1e-9:
+                c0 = end_cost[sym] - (float((-t1["netCash"].map(f) + t1["fifoPnlRealized"]).sum()) if len(t1) else 0.0)
+                ev.append((d8(first), -1, sym, q0, c0, 0.0))
+    exd = {(c.get("symbol"), c.get("dateTime")): c.get("exDate") for c in cash
+           if c.get("type") in DIV_TYPES[:2] and c.get("exDate")}
+    for c in cash:
+        if c.get("symbol") and c.get("type") in DIV_TYPES and c.get("assetCategory") in ("STK", None, ""):
+            day = c.get("exDate") or exd.get((c.get("symbol"), c.get("dateTime"))) or (c.get("dateTime") or "")[:8]
+            if day:
+                ev.append((d8(day[:8]), 0, c["symbol"], 0.0, -f(c.get("amount")), 0.0))
+    return ev
+
+
 def max_drawdown(idx: pd.Series):
     peak = idx.cummax()
     dd = idx / peak - 1
@@ -201,7 +282,8 @@ def load_benchmark(root_dir: str, sym: str) -> pd.Series | None:
     if not os.path.exists(fp):
         return None
     try:
-        j = json.load(open(fp, encoding="utf-8"))
+        with open(fp, encoding="utf-8") as fh:
+            j = json.load(fh)
         res = j["chart"]["result"][0]
         ts = res["timestamp"]
         tz = res.get("meta", {}).get("gmtoffset", -14400)
@@ -489,6 +571,26 @@ def analyze(root_dir: str) -> dict:
             trade_stats["intraday_share"] = float(wt[hd < 1].sum() / wt.sum())
         tdf["month"] = tdf["dt"].map(lambda x: x.strftime("%Y-%m"))
         trade_stats["by_month"] = tdf.groupby("month").agg(n=("symbol", "size"), money=("money_base", "sum")).reset_index().to_dict("records")
+
+    # ---- per-position extras: break-even price, today's P&L, days held ----
+    rounds = diluted_rounds(diluted_events(tdf, cash, days))
+    day_mtm = defaultdict(float)                        # today's mark-to-market P&L per symbol, in base currency
+    for m in last.iter("MTMPerformanceSummaryUnderlying"):
+        if m.get("symbol") and m.get("assetCategory") not in (None, "", "CASH"):
+            day_mtm[m.get("symbol")] += f(m.get("total"))
+    for p in positions:
+        b = rounds.get(p["symbol"]) if p["cat"] == "STK" else None
+        local_value = p["value"] / p["fx"]
+        if b and abs(b["qty"] - p["qty"]) < 1e-6:        # skipped if shares don't reconcile (e.g. a split or a transfer in)
+            p.update(dil_cost=b["net"] / b["qty"], dil_pnl=(local_value - b["net"]) * p["fx"],
+                     round_real=b["real"] * p["fx"], round_div=b["div"] * p["fx"], round_n=b["n"],
+                     round_start=pd.Timestamp(b["start"]).strftime("%Y-%m-%d"), round_seed=bool(b["seed"]))
+        else:
+            p.update(dil_cost=None, dil_pnl=None, round_real=None, round_div=None, round_n=None, round_start=None, round_seed=False)
+        p["day_pnl"] = day_mtm.get(p["symbol"])
+        since = pd.Timestamp(p["round_start"]) if p["round_start"] else (pd.Timestamp(open_lots[p["symbol"]]) if p["symbol"] in open_lots else None)
+        p["held"] = (end_date.normalize() - since.normalize()).days if since is not None else None
+        p["held_min"] = bool(p["round_seed"])            # position predates the data: held at least this long
 
     avg_nav = float(d.loc[d["end"] > MIN_CAPITAL, "end"].mean())
     trade_stats["turnover_x"] = trade_stats.get("turnover", 0) / avg_nav if avg_nav else None

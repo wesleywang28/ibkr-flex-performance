@@ -76,8 +76,18 @@ footer{margin-top:34px;color:var(--muted);font-size:12.3px}
 details{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 16px}
 details summary{cursor:pointer;color:var(--ink);font-weight:600}
 details li{margin:4px 0}
+details.fold{border:none;border-radius:0;padding:0;background:none;margin-top:12px}
+details.fold>summary{font-weight:500;color:var(--muted);font-size:12.5px;margin-bottom:6px}
+.comp{margin:4px 0 14px}.comp .t{font-size:12.5px;color:var(--muted);margin-bottom:6px}
+.comp .r{display:flex;align-items:center;gap:8px;margin:4px 0;font-size:12.5px}
+.comp .r .k{width:64px;flex:none;color:var(--muted)}.comp .r .v{width:52px;flex:none;text-align:right;font-variant-numeric:tabular-nums}
+.comp .bar{flex:1;display:flex;height:18px;background:#f1f2f5;border-radius:5px;overflow:hidden;min-width:0}
+.comp .bar span{display:block;height:100%}
+.comp .lg{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--muted);margin-top:6px}
+.comp .lg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
 @media(max-width:600px){.wrap{padding:16px 10px 40px}.card{padding:14px 12px}.kpi .val{font-size:20px}th,td{padding:6px 7px}
 .cal .c{padding:4px 5px;min-height:54px}.cal .c .r{font-size:12.5px}.cal .c .p{font-size:11px}}
+@media(max-width:600px){#tPos th:nth-child(2),#tPos td:nth-child(2){display:none}}
 </style>
 </head>
 <body>
@@ -147,6 +157,9 @@ const LANGS = {
     navC: 'NAV vs. net contributions', navHint: 'Dashed: same cash flows invested in SPY', navL: 'NAV', contribL: 'Net contributions', simL: 'Same cash flows in SPY',
     dd: 'Drawdown', ddHint: 'Decline from the running peak',
     mon: 'Monthly returns', monHint: 'Time-weighted', monCols: {m: 'Month', account: 'Account (adjusted)', ibkr: 'IBKR as reported', ex: 'Excess vs. SPY', total: 'Total'},
+    comp: 'Composition (% of NAV)', compLong: 'Long', compShort: 'Short', compCls: {stk: 'Stocks', etf: 'ETFs', opt: 'Options', oth: 'Other'},
+    compOpt: 'Options are shown at their market value (premium), which understates the exposure they carry.',
+    evDetails: 'Event details', altLang: '中文',
     pos: 'Open positions', asOf: e => `As of ${e}`, chips: ['Long value', 'Short value', 'Cash', 'Gross exposure / NAV', 'Net exposure / NAV'],
     posCols: ['Symbol', 'Description', 'Side', 'Quantity', 'Avg cost', 'Price', 'Value', '% of NAV', 'Unrealized P&L', 'Return'], long: 'Long', short: 'Short', noPos: 'No open positions',
     expo: 'Daily long / short exposure and gross leverage', longV: 'Long value', shortV: 'Short value', grossL: 'Gross exposure / NAV',
@@ -221,6 +234,9 @@ const LANGS = {
     navC: '净值 vs 投入本金', navHint: '虚线：同样的出入金全部买 SPY', navL: '账户净值', contribL: '净投入本金', simL: '同样出入金买 SPY',
     dd: '回撤', ddHint: '距历史高点的跌幅',
     mon: '月度收益', monHint: '时间加权', monCols: {m: '月份', account: '账户（调整后）', ibkr: 'IBKR 显示', ex: '超额（vs SPY）', total: '合计'},
+    comp: '资产构成（占净值）', compLong: '多头', compShort: '空头', compCls: {stk: '个股', etf: 'ETF', opt: '期权', oth: '其他'},
+    compOpt: '期权按市值（权利金）计算，会低估它实际带来的敞口。',
+    evDetails: '事件明细', altLang: 'English',
     pos: '当前持仓', asOf: e => `截至 ${e}`, chips: ['多头市值', '空头市值', '现金', '总敞口 / 净值', '净敞口 / 净值'],
     posCols: ['标的', '名称', '方向', '数量', '成本价', '现价', '市值', '占净值', '未实现盈亏', '收益率'], long: '多', short: '空', noPos: '目前没有持仓',
     expo: '每日多空敞口与总杠杆', longV: '多头市值', shortV: '空头市值', grossL: '总敞口 / 净值',
@@ -302,7 +318,7 @@ const kpis = [
 
 document.getElementById('app').innerHTML = `
 <header>
-  <div><h1>${L.title}${M.demo ? ` <span class="tag t-tax" style="font-size:13px;vertical-align:4px">${L.demo}</span>` : ''}</h1>
+  <div><h1>${L.title}${M.demo ? ` <span class="tag t-tax" style="font-size:13px;vertical-align:4px">${L.demo}</span>` : ''}${M.demo && /^https?:$/.test(location.protocol) ? ` <a href="${M.lang === 'zh' ? '../' : 'zh/'}" style="font-size:13px;font-weight:500;vertical-align:4px;color:var(--acc);text-decoration:none">${L.altLang}</a>` : ''}</h1>
   <div class="sub">${L.acct(M.account, M.currency, M.start, M.end, K.n_days)}</div>
   <div class="sub" style="margin-top:3px">${L.latest(M.end, money(K.nav), `<span class="${cls(S.r_adj[N - 1])}">${pct(S.r_adj[N - 1])}</span>`, hasB('SPY') && N > 1 ? pct((1 + S.SPY[N - 1]) / (1 + S.SPY[N - 2]) - 1) : '')}</div></div>
   <div class="sub">${L.generated} ${M.generated}</div>
@@ -335,15 +351,14 @@ document.getElementById('app').innerHTML = `
     <div class="callout" id="why"></div>
     <div class="card"><div class="sub" style="margin-bottom:6px">${L.zoom}</div><div class="chart sm"><canvas id="cZoom"></canvas></div></div>
   </div>
-  <div class="card" style="margin-top:14px"><div class="xscroll"><table id="tEv"></table></div></div>
+  <details class="fold"><summary>${L.evDetails}</summary><div class="card"><div class="xscroll"><table id="tEv"></table></div></div></details>
 </section>
 
 <section class="card" id="styleCard">
   <h2>${L.style} <span class="hint" id="styleHint"></span></h2>
   <div class="sub" style="margin-bottom:4px">${L.styleSub}</div>
   <div class="xscroll" style="max-width:760px"><table id="tChg"></table></div>
-  <div class="sub" style="margin:16px 0 4px">${L.byMonth}</div>
-  <div class="scroll"><table id="tStyle"></table></div>
+  <details class="fold" style="margin-top:16px"><summary>${L.byMonth}</summary><div class="scroll"><table id="tStyle"></table></div></details>
 </section>
 
 <section class="card" id="rollCard" style="display:none"><h2>${L.roll} <span class="hint" id="rollHint"></span></h2><div class="chart md"><canvas id="cRoll"></canvas></div></section>
@@ -362,6 +377,7 @@ document.getElementById('app').innerHTML = `
   <div class="chips">
     ${[money(K.long_mv), money(K.short_mv), money(K.cash), (grossExpo / K.nav).toFixed(2) + '×', pct((K.long_mv + K.short_mv) / K.nav, 1)].map((v, i) => `<div class="chip"><div class="lab">${L.chips[i]}</div><div class="val">${v}</div></div>`).join('')}
   </div>
+  <div class="comp" id="comp"></div>
   <div class="scroll"><table id="tPos"></table></div>
   <div class="sub" style="margin:14px 0 6px">${L.expo}</div>
   <div class="chart sm"><canvas id="cExpo"></canvas></div>
@@ -444,6 +460,24 @@ document.getElementById('app').innerHTML = `
   document.getElementById('tPos').innerHTML = `<tr>${L.posCols.map((c, j) => `<th${j < 3 ? ' class="l"' : ''}>${c}</th>`).join('')}</tr>` +
     (D.positions.length ? D.positions.map(p => `<tr><td class="l"><b>${p.symbol}</b></td><td class="l dim">${(p.desc || '').slice(0, 28)}</td><td class="l"><span class="tag ${p.qty > 0 ? 't-in' : 't-out'}">${p.qty > 0 ? L.long : L.short}</span></td><td>${p.qty.toLocaleString()}</td><td>${num(p.avg)}</td><td>${num(p.mark)}</td><td>${money(p.value)}</td><td>${pct(p.value / K.nav, 1, false)}</td><td class="${cls(p.upnl)}">${money(p.upnl, 0, true)}</td><td class="${cls(p.upnl)}">${pct(p.upnl / Math.abs(p.cost || 1), 1)}</td></tr>`).join('')
       : `<tr><td class="l dim" colspan="10">${L.noPos}</td></tr>`);
+
+  (function () {   // composition: long and short market value by asset class, as % of NAV
+    const el = document.getElementById('comp');
+    const ps = D.positions.filter(p => p.value);
+    if (!ps.length || !K.nav) { el.style.display = 'none'; return; }
+    const keyOf = p => p.cat === 'STK' ? (p.sub === 'ETF' ? 'etf' : 'stk') : (p.cat === 'OPT' ? 'opt' : 'oth');
+    const col = {stk: '#1f5eff', etf: '#7c4dff', opt: '#e8a317', oth: '#9aa3b5'};
+    const order = ['stk', 'etf', 'opt', 'oth'];
+    const sum = side => { const o = {}; ps.forEach(p => { if (side * p.value > 0) { const k = keyOf(p); o[k] = (o[k] || 0) + Math.abs(p.value) / K.nav; } }); return o; };
+    const L1 = sum(1), S1 = sum(-1);
+    const tot = o => Object.values(o).reduce((a, b) => a + b, 0);
+    const scale = Math.max(1, tot(L1), tot(S1));
+    const row = (lab, o) => tot(o) ? `<div class="r"><span class="k">${lab}</span><div class="bar">${order.filter(k => o[k]).map(k => `<span title="${L.compCls[k]} ${pct(o[k], 1, false)}" style="width:${o[k] / scale * 100}%;background:${col[k]}"></span>`).join('')}</div><span class="v">${pct(tot(o), 0, false)}</span></div>` : '';
+    const used = order.filter(k => L1[k] || S1[k]);
+    const lg = used.map(k => `<span><i style="background:${col[k]}"></i>${L.compCls[k]} ${[L1[k] ? `${L.compLong} ${pct(L1[k], 0, false)}` : '', S1[k] ? `${L.compShort} ${pct(S1[k], 0, false)}` : ''].filter(Boolean).join(' · ')}</span>`).join('');
+    el.innerHTML = `<div class="t">${L.comp}</div>${row(L.compLong, L1)}${row(L.compShort, S1)}<div class="lg">${lg}</div>` +
+      (used.includes('opt') ? `<div class="lg">${L.compOpt}</div>` : '');
+  })();
 
   document.getElementById('tSym').innerHTML = `<tr>${L.symCols.map((c, j) => `<th${j ? '' : ' class="l"'}>${c}</th>`).join('')}</tr>` +
     syms.map(s => `<tr><td class="l"><b>${s.symbol}</b></td><td class="${cls(s.realized)}">${money(s.realized, 0, true)}</td><td class="${s.unrealized ? cls(s.unrealized) : 'dim'}">${s.unrealized ? money(s.unrealized, 0, true) : '—'}</td><td class="${s.div ? cls(s.div) : 'dim'}">${s.div ? money(s.div, 0, true) : '—'}</td><td class="${cls(s.total)}"><b>${money(s.total, 0, true)}</b></td><td>${s.n_exec}</td><td>${money(s.turnover)}</td><td>${money(s.comm, 0)}</td></tr>`).join('');

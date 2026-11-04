@@ -79,7 +79,8 @@ def chartjs_tag() -> str:
             except Exception:  # noqa
                 continue
     if os.path.exists(fp):
-        return "<script>" + open(fp, encoding="utf-8").read() + "</script>"
+        with open(fp, encoding="utf-8") as fh:
+            return "<script>" + fh.read() + "</script>"
     print("[warn] Could not download Chart.js; the page will load it from a CDN (needs internet when opened)")
     return f'<script src="{CHARTJS_CDNS[0]}"></script>'
 
@@ -148,10 +149,11 @@ def build(root: str, demo: bool = False, snapshot: bool = True, lang: str | None
         positions=R["positions"], syms=R["sym_rows"], trade=R["trade_stats"],
         top_win=top_win, top_loss=top_loss, fees=R["fees"],
         flags=X["flags"], style_rows=X["style_rows"], style_changes=X["style_changes"],
-        style_note=X["style_note"], rolling=X["rolling"],
+        style_note=X["style_note"], style_cmp=X.get("style_cmp"), rolling=X["rolling"],
     ))
 
-    tpl = open(os.path.join(HERE, "template.html"), encoding="utf-8").read()
+    with open(os.path.join(HERE, "template.html"), encoding="utf-8") as fh:
+        tpl = fh.read()
     html = tpl.replace("<script>/*__CHARTJS__*/</script>", chartjs_tag()) \
               .replace("/*__DATA__*/", json.dumps(payload, ensure_ascii=False))
     out = os.path.join(root, f"{OUT_NAME}.html")
@@ -176,7 +178,10 @@ def print_summary(R: dict, root: str):
     d = R["d"]
     os.makedirs(os.path.join(root, "data"), exist_ok=True)
     snap_fp = os.path.join(root, "data", "last_summary.json")
-    prev = json.load(open(snap_fp, encoding="utf-8")) if os.path.exists(snap_fp) else None
+    prev = None
+    if os.path.exists(snap_fp):
+        with open(snap_fp, encoding="utf-8") as fh:
+            prev = json.load(fh)
     end = R["end_date"].strftime("%Y-%m-%d")
     spy = R["bench"].get("SPY")
     m = lambda v, sign=False: ("+" if sign and v > 0 else "") + risk.money(v)
@@ -204,6 +209,11 @@ def print_summary(R: dict, root: str):
         lines.append(t("Closed on the latest day: ", "最新交易日平仓：") + sep.join(f"{x['u']} {x['pnl']:+,.0f}" for x in last_trades))
     lines.append(t("Positions: ", "当前持仓：") + (sep.join(
         f"{p['symbol']} {t('long', '多') if p['qty'] > 0 else t('short', '空')} {abs(p['qty']):,.0f}" + t(f" ({p['upnl']:+,.0f})", f"（{p['upnl']:+,.0f}）") for p in R["positions"]) or t("none", "空仓")))
+    dil = [p for p in R["positions"] if p.get("dil_cost") is not None and abs((p["round_real"] or 0) + (p["round_div"] or 0)) >= 1]
+    if dil:
+        lines.append(t("Break-even price (this round's realized P&L and dividends folded in): ", "摊薄成本（本轮做T已实现和分红摊进成本）：") + t("; ", "；").join(
+            t(f"{p['symbol']} {p['dil_cost']:,.3f} (IBKR cost {p['avg']:,.3f}, round P&L {m(p['dil_pnl'], True)})",
+              f"{p['symbol']} {p['dil_cost']:,.3f}（IBKR {p['avg']:,.3f}，摊薄盈亏 {m(p['dil_pnl'], True)}）") for p in dil))
     X = R.get("_x", {})
     fl = [x for x in X.get("flags", []) if x["level"] in ("high", "mid")]
     if fl:
@@ -211,7 +221,7 @@ def print_summary(R: dict, root: str):
         lines += [f"  [{t('HIGH', '高') if x['level'] == 'high' else t('MEDIUM', '中')}] {x['title']}" for x in fl]
     ch = [c for c in X.get("style_changes", []) if c["big"]]
     if ch:
-        month = X["style_rows"][-1]["month"]
+        month = (X.get("style_cmp") or {}).get("month") or X["style_rows"][-1]["month"]
         lines.append(t(f"Trading-style changes ({month} vs. earlier monthly average): ", f"交易风格变化（{month} vs 此前月均）：") +
                      t("; ", "；").join(t(f"{c['name']} {c['latest']} (was {c['base']}, {c['delta']})",
                                          f"{c['name']} {c['latest']}（此前 {c['base']}，{c['delta']}）") for c in ch))
@@ -222,8 +232,8 @@ def print_summary(R: dict, root: str):
             kind = t(e["kind"], EVENT_ZH.get(e["kind"], e["kind"]))
             lines.append(t(f"New event: {e['date']:%Y-%m-%d} {kind} {m(e['amount'], True)}", f"新事件：{e['date']:%Y-%m-%d} {kind} {m(e['amount'], True)}"))
     print("\n".join(lines))
-    json.dump(dict(end=end, nav=R["nav_end"], cum_adj=R["cum_adj"], n_exec=R["trade_stats"].get("n_exec", 0)),
-              open(snap_fp, "w", encoding="utf-8"))
+    with open(snap_fp, "w", encoding="utf-8") as fh:
+        json.dump(dict(end=end, nav=R["nav_end"], cum_adj=R["cum_adj"], n_exec=R["trade_stats"].get("n_exec", 0)), fh)
 
 
 if __name__ == "__main__":

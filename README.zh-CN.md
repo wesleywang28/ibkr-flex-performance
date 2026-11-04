@@ -55,7 +55,7 @@ python analysis/build_dashboard.py demo --demo --lang zh
 ### 环境要求
 
 - 拉取数据需要 Windows 10/11（PowerShell 和任务计划程序都是系统自带的）
-- Python 3.9+，运行 `pip install -r requirements.txt`（只需要 pandas 和 numpy）
+- Python 3.11+，运行 `pip install -r requirements.txt`（只需要 pandas 和 numpy；自动测试在 3.11 和 3.13 上运行）
 - 生成仪表盘的部分是跨平台的，可以把 `data/` 拷到 macOS 或 Linux 上生成
 
 ### 设置步骤

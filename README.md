@@ -55,7 +55,7 @@ The demo includes a temporary withholding to show the reconciliation. To see how
 ### Requirements
 
 - Windows 10/11 for the data pull (PowerShell and Task Scheduler are built in)
-- Python 3.9+ with `pip install -r requirements.txt` (only pandas and numpy)
+- Python 3.11+ with `pip install -r requirements.txt` (only pandas and numpy; the tests run on 3.11 and 3.13)
 - The dashboard builder itself is cross-platform; you can copy `data/` to macOS or Linux and build there
 
 ### Setup

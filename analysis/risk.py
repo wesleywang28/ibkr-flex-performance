@@ -129,8 +129,11 @@ def fmt(v, kind):
 
 def style_changes(rows: list[dict], T: dict) -> tuple[str | None, list[dict]]:
     if len(rows) < 2:
-        return None, []
-    latest, prior = rows[-1], rows[:-1]
+        return None, [], None
+    k = len(rows) - 1
+    if rows[k].get("n_days", 0) < 8 and k >= 2:   # the month has only just started: compare the last full month instead
+        k -= 1
+    latest, prior = rows[k], rows[:k]
     out = []
     for key, names, kind, f in STYLE_METRICS:
         vals = [r[key] for r in prior if r.get(key) is not None]
@@ -149,10 +152,14 @@ def style_changes(rows: list[dict], T: dict) -> tuple[str | None, list[dict]]:
             big = abs(rel) >= T["style_change_rel"]
             delta = f"{rel * 100:+.0f}%"
         out.append(dict(key=key, name=tr(*names), latest=fmt(cur, f), base=fmt(base, f), delta=delta, big=bool(big)))
-    n = latest.get("n_days", 0)
-    note = None if n >= 8 else tr(f"{latest['month']} has only {n} trading days, so treat the comparison with caution",
-                                  f"{latest['month']} 只有 {n} 个交易日，对比仅供参考")
-    return note, out
+    cur, n = rows[-1], rows[-1].get("n_days", 0)
+    if k < len(rows) - 1:
+        note = tr(f"{cur['month']} has only {n} trading day{'' if n == 1 else 's'} so far, so {latest['month']} is compared instead",
+                  f"{cur['month']} 只有 {n} 个交易日，先用 {latest['month']} 对比此前月份")
+    else:
+        note = None if n >= 8 else tr(f"{latest['month']} has only {n} trading day{'' if n == 1 else 's'}, so treat the comparison with caution",
+                                      f"{latest['month']} 只有 {n} 个交易日，对比仅供参考")
+    return note, out, dict(month=latest["month"], base_from=prior[0]["month"], base_to=prior[-1]["month"])
 
 
 # ======================================================================
@@ -188,7 +195,8 @@ def risk_flags(R: dict, rows: list[dict], T: dict) -> list[dict]:
                f"数据截至 {end:%Y-%m-%d}，已经落后约 {lag} 个工作日。检查 data/pull_log.txt，或双击 run_pull.bat 手动拉取。"))
     log = os.path.join(R["root"], "data", "pull_log.txt")
     if os.path.exists(log):
-        tail = [l.strip() for l in open(log, encoding="utf-8-sig").read().splitlines() if l.strip()][-3:]
+        with open(log, encoding="utf-8-sig") as fh:
+            tail = [l.strip() for l in fh.read().splitlines() if l.strip()][-3:]
         bad = [l for l in tail if "ERROR:" in l]
         if bad and not any("Success:" in l for l in tail[tail.index(bad[-1]):]):
             add("high", tr("The last automatic pull failed", "最近一次自动拉取失败"), bad[-1][20:])
@@ -354,6 +362,6 @@ def analyze_style_risk(R: dict, lang: str | None = None) -> dict:
     set_language(lang or R.get("settings", {}).get("language", "en"))
     T = dict(DEFAULT_T, **R.get("settings", {}).get("thresholds", {}))
     rows = monthly_style(R)
-    note, changes = style_changes(rows, T)
-    return dict(style_rows=rows, style_note=note, style_changes=changes,
+    note, changes, cmp_ = style_changes(rows, T)
+    return dict(style_rows=rows, style_note=note, style_changes=changes, style_cmp=cmp_,
                 flags=risk_flags(R, rows, T), rolling=rolling_metrics(R))
